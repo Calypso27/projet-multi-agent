@@ -1,13 +1,3 @@
-"""
-Interface de Monitoring - Semaine 1
-Fichier: interface/monitoring_app.py
-
-Interface Streamlit pour visualiser le systeme multi-agent
-Permet de voir les agents, les messages, et tester le systeme
-
-Usage: streamlit run interface/monitoring_app.py
-"""
-
 import streamlit as st
 import sys
 import os

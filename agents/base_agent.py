@@ -1,7 +1,4 @@
 
-# la classe de base pour tous les agents du systeme.
-
-
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, Any, Optional

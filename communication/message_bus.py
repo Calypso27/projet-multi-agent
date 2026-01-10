@@ -1,11 +1,3 @@
-"""
-Message Bus - Systeme de Communication Inter-Agents
-Fichier: communication/message_bus.py
-
-Ce fichier gere la communication entre tous les agents du systeme.
-Il agit comme un intermediaire (mediateur) pour router les messages.
-"""
-
 from queue import Queue, Empty
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -13,29 +5,18 @@ import json
 
 
 class MessageBus:
-    """
-    Bus de messages centralise pour la communication inter-agents.
     
-    Responsabilites:
-    - Enregistrer les agents
-    - Router les messages entre agents
-    - Maintenir l'historique des messages
-    - Gerer les files d'attente par agent
-    """
     
     def __init__(self):
-        """Initialise le MessageBus"""
+        #Initialise le MessageBus
         self.queues: Dict[str, Queue] = {}
         self.history: List[Dict] = []
         self.registered_agents: List[str] = []
         
     def register_agent(self, agent_name: str):
-        """
-        Enregistre un agent dans le bus
         
-        Args:
-            agent_name: Nom unique de l'agent
-        """
+        #Enregistre un agent dans le bus
+        
         if agent_name not in self.queues:
             self.queues[agent_name] = Queue()
             self.registered_agents.append(agent_name)
@@ -44,28 +25,15 @@ class MessageBus:
             print(f"[MessageBus] Agent deja enregistre: {agent_name}")
     
     def unregister_agent(self, agent_name: str):
-        """
-        Desenregistre un agent
-        
-        Args:
-            agent_name: Nom de l'agent a desenregistrer
-        """
+        #Desenregistre un agent du bus
         if agent_name in self.queues:
             del self.queues[agent_name]
             self.registered_agents.remove(agent_name)
             print(f"[MessageBus] Agent desenregistre: {agent_name}")
     
     def send_message(self, to_agent: str, message: Dict[str, Any]) -> bool:
-        """
-        Envoie un message a un agent
         
-        Args:
-            to_agent: Nom de l'agent destinataire
-            message: Message a envoyer
-            
-        Returns:
-            True si succes, False sinon
-        """
+        #Envoie un message a un agent specifique
         if to_agent not in self.queues:
             print(f"[MessageBus] ERREUR: Agent inconnu: {to_agent}")
             return False
@@ -83,16 +51,8 @@ class MessageBus:
         return True
     
     def get_message(self, agent_name: str, timeout: Optional[int] = None) -> Optional[Dict]:
-        """
-        Recupere un message pour un agent
         
-        Args:
-            agent_name: Nom de l'agent
-            timeout: Temps d'attente max en secondes (None = non bloquant)
-            
-        Returns:
-            Message ou None si aucun message
-        """
+        #Recoit un message pour un agent specifique
         if agent_name not in self.queues:
             print(f"[MessageBus] ERREUR: Agent inconnu: {agent_name}")
             return None
@@ -108,29 +68,14 @@ class MessageBus:
             return None
     
     def has_messages(self, agent_name: str) -> bool:
-        """
-        Verifie si un agent a des messages en attente
         
-        Args:
-            agent_name: Nom de l'agent
-            
-        Returns:
-            True si des messages sont en attente
-        """
+        #Verifie si un agent a des messages en attente
         if agent_name not in self.queues:
             return False
         return not self.queues[agent_name].empty()
     
     def get_queue_size(self, agent_name: str) -> int:
-        """
-        Retourne le nombre de messages en attente pour un agent
-        
-        Args:
-            agent_name: Nom de l'agent
-            
-        Returns:
-            Nombre de messages
-        """
+        #Retourne la taille de la file d'attente d'un agent
         if agent_name not in self.queues:
             return 0
         return self.queues[agent_name].qsize()
@@ -138,17 +83,7 @@ class MessageBus:
     def get_history(self, limit: Optional[int] = None, 
                    from_agent: Optional[str] = None,
                    to_agent: Optional[str] = None) -> List[Dict]:
-        """
-        Recupere l'historique des messages
         
-        Args:
-            limit: Nombre max de messages a retourner
-            from_agent: Filtrer par expediteur
-            to_agent: Filtrer par destinataire
-            
-        Returns:
-            Liste des messages
-        """
         filtered = self.history
         
         if from_agent:
@@ -163,17 +98,12 @@ class MessageBus:
         return filtered
     
     def clear_history(self):
-        """Efface l'historique des messages"""
+        #Efface l'historique des messages
         self.history.clear()
         print("[MessageBus] Historique efface")
     
     def get_stats(self) -> Dict[str, Any]:
-        """
-        Retourne des statistiques sur le bus
-        
-        Returns:
-            Dictionnaire de statistiques
-        """
+        #Retourne des statistiques sur le bus
         stats = {
             "registered_agents": len(self.registered_agents),
             "agents": self.registered_agents.copy(),
@@ -187,12 +117,7 @@ class MessageBus:
         return stats
     
     def export_history(self, filepath: str):
-        """
-        Export l'historique des messages en JSON
-        
-        Args:
-            filepath: Chemin du fichier de sortie
-        """
+        #Export l'historique des messages vers un fichier JSON
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.history, f, indent=2, ensure_ascii=False)
@@ -201,7 +126,7 @@ class MessageBus:
             print(f"[MessageBus] Erreur export: {e}")
     
     def reset(self):
-        """Reset complet du bus"""
+        #Reinitialise le bus - Desenregistre tous les agents et efface l'historique
         for agent_name in list(self.queues.keys()):
             self.unregister_agent(agent_name)
         self.clear_history()

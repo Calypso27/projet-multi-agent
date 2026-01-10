@@ -1,11 +1,3 @@
-"""
-Agent Manager - Gestionnaire du Cycle de Vie des Agents
-Fichier: agents/agent_manager.py
-
-Ce fichier gere l'enregistrement, le demarrage et l'arret de tous les agents.
-C'est le point d'entree principal du systeme multi-agent.
-"""
-
 from typing import Dict, List, Optional
 from datetime import datetime
 
@@ -14,18 +6,9 @@ from communication.message_bus import MessageBus
 
 
 class AgentManager:
-    """
-    Gestionnaire centralise des agents du systeme.
-    
-    Responsabilites:
-    - Enregistrer les agents
-    - Demarrer/Arreter les agents
-    - Fournir acces au MessageBus
-    - Monitorer le statut des agents
-    """
     
     def __init__(self):
-        """Initialise le gestionnaire d'agents"""
+        #Initialise le gestionnaire d'agents
         self.agents: Dict[str, Agent] = {}
         self.message_bus = MessageBus()
         self.start_time = datetime.now()
@@ -33,15 +16,7 @@ class AgentManager:
         print("[AgentManager] Gestionnaire initialise")
     
     def register_agent(self, agent: Agent) -> bool:
-        """
-        Enregistre un agent dans le systeme
-        
-        Args:
-            agent: Instance de l'agent a enregistrer
-            
-        Returns:
-            True si succes, False sinon
-        """
+        #Enregistre un agent
         if agent is None:
             print("[AgentManager] ERREUR: Agent est None")
             return False
@@ -65,15 +40,7 @@ class AgentManager:
         return True
     
     def unregister_agent(self, agent_name: str) -> bool:
-        """
-        Desenregistre un agent
         
-        Args:
-            agent_name: Nom de l'agent
-            
-        Returns:
-            True si succes
-        """
         if agent_name not in self.agents:
             print(f"[AgentManager] ERREUR: Agent inconnu: {agent_name}")
             return False
@@ -91,19 +58,11 @@ class AgentManager:
         return True
     
     def get_agent(self, agent_name: str) -> Optional[Agent]:
-        """
-        Recupere une reference a un agent
-        
-        Args:
-            agent_name: Nom de l'agent
-            
-        Returns:
-            Instance de l'agent ou None
-        """
+        #Retourne une instance d'agent par nom
         return self.agents.get(agent_name)
     
     def start_all(self):
-        """Demarre tous les agents enregistres"""
+        #Demarre tous les agents
         print("\n[AgentManager] Demarrage de tous les agents...")
         
         for agent_name, agent in self.agents.items():
@@ -116,7 +75,7 @@ class AgentManager:
         print(f"[AgentManager] {len(self.agents)} agents demarres\n")
     
     def stop_all(self):
-        """Arrete tous les agents"""
+        #Arrete tous les agents
         print("\n[AgentManager] Arret de tous les agents...")
         
         for agent_name, agent in self.agents.items():
@@ -129,12 +88,7 @@ class AgentManager:
         print(f"[AgentManager] Tous les agents arretes\n")
     
     def get_all_status(self) -> Dict[str, Dict]:
-        """
-        Recupere le statut de tous les agents
-        
-        Returns:
-            Dictionnaire {agent_name: status}
-        """
+        #Retourne le statut de tous les agents
         status = {}
         for agent_name, agent in self.agents.items():
             try:
@@ -147,12 +101,7 @@ class AgentManager:
         return status
     
     def get_system_info(self) -> Dict:
-        """
-        Retourne des informations sur le systeme
-        
-        Returns:
-            Dictionnaire d'informations systeme
-        """
+        #Retourne des informations sur le systeme
         uptime = datetime.now() - self.start_time
         
         return {
@@ -164,7 +113,7 @@ class AgentManager:
         }
     
     def print_system_status(self):
-        """Affiche le statut complet du systeme"""
+        #Affiche le statut du systeme multi-agent
         print("\n" + "=" * 70)
         print("STATUT DU SYSTEME MULTI-AGENT")
         print("=" * 70)
@@ -196,14 +145,7 @@ class AgentManager:
         print("=" * 70 + "\n")
     
     def send_broadcast(self, task: str, payload: Dict, exclude: Optional[List[str]] = None):
-        """
-        Envoie un message a tous les agents
-        
-        Args:
-            task: Tache a effectuer
-            payload: Donnees
-            exclude: Liste d'agents a exclure
-        """
+        #Envoie un message broadcast a tous les agents, optionnellement en excluant certains
         exclude = exclude or []
         
         for agent_name in self.agents.keys():
@@ -221,7 +163,7 @@ class AgentManager:
         print(f"[AgentManager] Broadcast envoye: {task}")
     
     def shutdown(self):
-        """Arret complet et propre du systeme"""
+            #Arrete proprement le systeme multi-agent
         print("\n[AgentManager] Arret du systeme...")
         
         # Arreter tous les agents
