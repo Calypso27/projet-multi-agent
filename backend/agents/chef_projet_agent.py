@@ -43,18 +43,13 @@ class ChefProjetAgent(BaseAgent):
     def _handle_data_validation(self, message: Message):
         """Reçoit la validation de l'Ingénieur et stocke le dataset"""
         if message.content.get('valid'):
-            # Important: Stocker dans session_state pour persister entre reruns
-            import streamlit as st
-            if hasattr(st, 'session_state'):
-                st.session_state.shared_dataset = message.content.get('dataset')
-                st.session_state.shared_metadata = message.content.get('metadata')
-                st.session_state.shared_profile = message.content.get('profile')
-            
+            # Stocker localement dans l'agent
             self.current_dataset = message.content.get('dataset')
             self.dataset_metadata = message.content.get('metadata')
             self.dataset_profile = message.content.get('profile')
-            
-            # Transférer au Frontend
+
+            # Transférer au Frontend qui se chargera de mettre à jour session_state
+            # depuis le contexte principal Streamlit
             self.message_bus.send_message(Message(
                 sender=self.name,
                 receiver="Frontend",
@@ -65,11 +60,13 @@ class ChefProjetAgent(BaseAgent):
     def _handle_user_request(self, message: Message):
         """Traite une requête utilisateur"""
         user_message = message.content.get('message', '').lower()
-        
+
         # Récupérer le dataset depuis le message (envoyé par Frontend)
         dataset = message.content.get('dataset')
-        
-        if 'analyser' in user_message or 'analyse' in user_message:
+
+        if 'eda_complet' in user_message or 'eda complet' in user_message:
+            self._request_eda_complet(dataset)
+        elif 'analyser' in user_message or 'analyse' in user_message:
             self._request_analysis(dataset)
         elif 'statistique' in user_message or 'stats' in user_message:
             self._request_statistics(dataset)
@@ -82,12 +79,25 @@ class ChefProjetAgent(BaseAgent):
         else:
             self._send_to_frontend("Commande non reconnue. Utilisez l'interface graphique.")
     
+    def _request_eda_complet(self, dataset=None):
+        """Demande un EDA complet et minutieux"""
+        if dataset is None:
+            self._send_error_to_frontend("Aucune donnée chargée")
+            return
+
+        self.message_bus.send_message(Message(
+            sender=self.name,
+            receiver="Analyste",
+            message_type=MessageType.TASK_REQUEST,
+            content={'task': 'eda_complet', 'dataset': dataset}
+        ))
+
     def _request_analysis(self, dataset=None):
         """Demande une analyse complète"""
         if dataset is None:
             self._send_error_to_frontend("Aucune donnée chargée")
             return
-        
+
         self.message_bus.send_message(Message(
             sender=self.name,
             receiver="Analyste",
@@ -140,11 +150,28 @@ class ChefProjetAgent(BaseAgent):
     
     def _forward_response(self, message: Message):
         """Transfère une réponse au Frontend"""
+        # Extraire le résultat de la tâche et le formater pour le Frontend
+        task = message.content.get('task', '')
+        result = message.content.get('result', '')
+        heatmap = message.content.get('heatmap', None)
+        visualizations = message.content.get('visualizations', None)
+
+        # Le Frontend s'attend à recevoir {'message': '...'}
+        content = {'message': result, 'task': task}
+
+        # Ajouter le heatmap s'il existe
+        if heatmap:
+            content['heatmap'] = heatmap
+
+        # Ajouter les visualisations s'il existe
+        if visualizations:
+            content['visualizations'] = visualizations
+
         self.message_bus.send_message(Message(
             sender=self.name,
             receiver="Frontend",
             message_type=MessageType.AGENT_RESPONSE,
-            content=message.content
+            content=content
         ))
     
     def _handle_error(self, message: Message):

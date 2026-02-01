@@ -1,33 +1,56 @@
 """Page d'exploration - Analyse des donnees"""
 import streamlit as st
 import time
+import base64
 from backend.models.message import Message, MessageType
+from backend.utils.data_quality_scorer import DataQualityScorer
 
 
 def render_exploration():
     """Page d'exploration des donnees"""
-    
+
     if not st.session_state.dataset_loaded:
-        st.warning("Veuillez d'abord charger un fichier depuis la page d'accueil")
-        if st.button("Retour a l'accueil"):
+        st.warning("**Étape précédente requise**")
+        st.info("Veuillez d'abord charger un fichier depuis la page d'accueil.")
+        if st.button("Retour à l'accueil", type="primary"):
             st.session_state.current_page = "home"
             st.session_state.current_page_display = "Accueil"
             st.rerun()
         return
-    
-    st.markdown("# Exploration des Donnees")
-    
+
+    st.markdown("# Exploration des Données")
+    st.markdown("*Analysez la qualité et comprenez vos données*")
+
+    # Marquer l'étape 2 comme complétée
+    if 'workflow' in st.session_state:
+        st.session_state.workflow['step_2_data_explored'] = True
+
     # Onglets
-    tab1, tab2, tab3 = st.tabs(["Vue Generale", "Statistiques", "Correlations"])
-    
+    tab1, tab2 = st.tabs(["Vue Générale", "Analyse EDA"])
+
     with tab1:
         show_overview_tab()
-    
+
     with tab2:
-        show_statistics_tab()
-    
-    with tab3:
-        show_correlations_tab()
+        show_eda_complet_tab()
+
+    # Bouton pour passer à l'étape suivante
+    st.markdown("---")
+    st.markdown("### Étape suivante")
+
+    quality_score = st.session_state.dataset_info.get('quality_score', 0)
+    if quality_score >= 70:
+        st.success(f"Qualité des données: **{quality_score}/100** - Vous pouvez continuer.")
+        if st.button("Passer à la modélisation", type="primary", use_container_width=True):
+            st.session_state.current_page = "predict"
+            st.session_state.current_page_display = "Prédire"
+            st.rerun()
+    else:
+        st.warning(f"Qualité des données: **{quality_score}/100** - Amélioration recommandée.")
+        if st.button("Continuer vers la modélisation", use_container_width=True):
+            st.session_state.current_page = "predict"
+            st.session_state.current_page_display = "Prédire"
+            st.rerun()
 
 
 def show_overview_tab():
@@ -84,63 +107,307 @@ def show_overview_tab():
             st.warning(f"Attention: {profile['duplicates']} lignes dupliquees")
 
 
-def show_statistics_tab():
-    """Onglet statistiques"""
-    
-    st.markdown("### Statistiques Descriptives")
-    
-    if st.button("Calculer les statistiques detaillees"):
-        with st.spinner("Analyse en cours..."):
-            # Récupérer le dataset depuis session_state
-            dataset = st.session_state.get('shared_dataset')
-            
-            # Demander au Chef de Projet
-            st.session_state.bus.send_message(Message(
-                sender="Frontend",
-                receiver="ChefProjet",
-                message_type=MessageType.USER_MESSAGE,
-                content={'message': 'statistiques', 'dataset': dataset}
-            ))
-            
-            # Attendre la reponse
-            response = wait_for_response()
-            
-            if response:
-                if response.message_type == MessageType.AGENT_RESPONSE:
-                    st.markdown(response.content.get('message', ''))
-                elif response.message_type == MessageType.ERROR:
-                    st.error(response.content.get('error', 'Erreur'))
-            else:
-                st.error("Delai d'attente depasse")
+def show_quality_report_tab():
+    """Onglet Rapport de Qualité des Données"""
+
+    st.markdown("## Rapport de Qualité des Données")
+    st.markdown("Évaluation professionnelle selon les standards de l'industrie")
+
+    profile = st.session_state.dataset_profile
+
+    # Vérifier si le rapport de qualité existe
+    if 'quality_report' not in profile:
+        st.info("Rapport de qualité non disponible. Rechargez le fichier pour générer le rapport.")
+        return
+
+    quality_report = profile['quality_report']
+
+    # Score global avec jauge visuelle
+    st.markdown("### Score Global")
+
+    col1, col2, col3 = st.columns([2, 1, 1])
+
+    with col1:
+        score = quality_report['overall_score']
+        grade = quality_report['grade']
+
+        # Déterminer la couleur
+        if score >= 90:
+            color = "#28a745"  # Vert
+        elif score >= 70:
+            color = "#ffc107"  # Jaune
+        elif score >= 50:
+            color = "#fd7e14"  # Orange
+        else:
+            color = "#dc3545"  # Rouge
+
+        # Barre de progression personnalisée
+        st.markdown(f"""
+        <div style="background-color: #e0e0e0; border-radius: 10px; height: 40px; overflow: hidden;">
+            <div style="background-color: {color}; width: {score}%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">
+                {score}/100
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.metric("Note", grade.split(' - ')[0], delta=grade.split(' - ')[1])
+
+    with col3:
+        ready_ml = quality_report['summary']['ready_for_ml']
+        st.metric("ML Ready", "Oui" if ready_ml else "Non")
+
+    st.markdown("---")
+
+    # Résumé exécutif
+    st.markdown("### Résumé Exécutif")
+
+    summary = quality_report['summary']
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Lignes Totales", f"{summary['total_rows']:,}")
+    with col2:
+        st.metric("Colonnes", summary['total_columns'])
+    with col3:
+        usable_pct = (summary['usable_rows'] / summary['total_rows'] * 100) if summary['total_rows'] > 0 else 0
+        st.metric("Lignes Utilisables", f"{summary['usable_rows']:,}", delta=f"{usable_pct:.1f}%")
+    with col4:
+        st.metric("Colonnes Problématiques", summary['problematic_columns'])
+
+    st.markdown("---")
+
+    # Évaluation par dimension
+    st.markdown("### Évaluation par Dimension")
+
+    dimensions = quality_report['dimensions']
+
+    dimension_names = {
+        'completeness': ('Complétude', 'Absence de valeurs manquantes'),
+        'validity': ('Validité', 'Types et plages de valeurs corrects'),
+        'consistency': ('Cohérence', 'Formats uniformes et absence de contradictions'),
+        'uniqueness': ('Unicité', 'Absence de doublons'),
+        'accuracy': ('Exactitude', 'Détection heuristique des anomalies')
+    }
+
+    for key, (name, description) in dimension_names.items():
+        dim = dimensions[key]
+
+        with st.expander(f"{name} - {dim['score']}/100 ({dim['status'].upper()})", expanded=(dim['status'] in ['fair', 'poor'])):
+            st.markdown(f"**Description:** {description}")
+
+            # Score
+            score_color = "#28a745" if dim['status'] == 'excellent' else \
+                         "#ffc107" if dim['status'] == 'good' else \
+                         "#fd7e14" if dim['status'] == 'fair' else "#dc3545"
+
+            st.markdown(f"""
+            <div style="background-color: #f0f0f0; border-radius: 5px; padding: 10px; margin: 10px 0;">
+                <div style="background-color: {score_color}; width: {dim['score']}%; height: 20px; border-radius: 3px;"></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Détails spécifiques
+            if key == 'completeness':
+                if dim['columns_with_missing'] > 0:
+                    st.warning(f" {dim['columns_with_missing']} colonnes avec valeurs manquantes ({dim['missing_cells']:,} cellules)")
+
+                    # Top 5 des colonnes avec le plus de manquants
+                    if dim['details']:
+                        st.markdown("**Top 5 colonnes affectées:**")
+                        sorted_missing = sorted(dim['details'].items(), key=lambda x: x[1]['percentage'], reverse=True)[:5]
+                        for col, info in sorted_missing:
+                            st.markdown(f"- `{col}`: {info['count']} valeurs ({info['percentage']:.1f}%)")
+
+            elif key == 'validity':
+                if dim['issues']:
+                    st.error(f"{len(dim['issues'])} problèmes de validité détectés")
+                    for issue in dim['issues'][:5]:  # Top 5
+                        st.markdown(f"- **{issue['column']}**: {issue['issue']} ({issue['count']} occurrences)")
+
+            elif key == 'consistency':
+                if dim['issues']:
+                    st.warning(f"{len(dim['issues'])} incohérences trouvées")
+                    for issue in dim['issues'][:5]:
+                        st.markdown(f"- **{issue['column']}**: {issue['issue']}")
+
+            elif key == 'uniqueness':
+                if dim['duplicate_rows'] > 0:
+                    dup_pct = (dim['duplicate_rows'] / dim['total_rows'] * 100)
+                    st.warning(f"{dim['duplicate_rows']} lignes dupliquées ({dup_pct:.2f}%)")
+
+                if dim['low_cardinality_columns']:
+                    st.info(f"{len(dim['low_cardinality_columns'])} colonnes à faible cardinalité")
+
+            elif key == 'accuracy':
+                if dim['issues']:
+                    st.warning(f"Outliers détectés dans {len(dim['issues'])} colonnes")
+                    for issue in dim['issues'][:5]:
+                        st.markdown(f"- **{issue['column']}**: {issue['count']} outliers ({issue['percentage']:.1f}%)")
+
+    st.markdown("---")
+
+    # Recommandations
+    st.markdown("### Recommandations")
+
+    for rec in quality_report['recommendations']:
+        # Déterminer le type d'alerte
+        if "CRITIQUE" in rec.upper() or "CRITICAL" in rec.upper():
+            st.error(rec)
+        elif "ATTENTION" in rec.upper() or "WARNING" in rec.upper():
+            st.warning(rec)
+        else:
+            st.success(rec)
+
+    st.markdown("---")
+
+    # Export du rapport
+    st.markdown("### Export du Rapport")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Formater en markdown
+        markdown_report = DataQualityScorer.format_report(quality_report)
+
+        st.download_button(
+            label="Télécharger le rapport (Markdown)",
+            data=markdown_report,
+            file_name="rapport_qualite_donnees.md",
+            mime="text/markdown",
+            use_container_width=True
+        )
+
+    with col2:
+        # Export JSON pour analyse programmatique
+        import json
+        import numpy as np
+
+        # Fonction pour convertir les types numpy en types Python natifs
+        def convert_numpy_types(obj):
+            if isinstance(obj, (np.integer, np.int32, np.int64)):
+                return int(obj)
+            elif isinstance(obj, (np.floating, np.float32, np.float64)):
+                return float(obj)
+            elif isinstance(obj, (np.bool_, bool)):
+                return bool(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            return obj
+
+        quality_report_clean = convert_numpy_types(quality_report)
+        json_report = json.dumps(quality_report_clean, indent=2, ensure_ascii=False)
+
+        st.download_button(
+            label=" Télécharger les données (JSON)",
+            data=json_report,
+            file_name="rapport_qualite_donnees.json",
+            mime="application/json",
+            use_container_width=True
+        )
 
 
-def show_correlations_tab():
-    """Onglet correlations"""
-    
-    st.markdown("### Analyse Complete")
-    
-    if st.button("Lancer l'analyse complete"):
-        with st.spinner("Analyse en cours..."):
+def show_eda_complet_tab():
+    """Onglet EDA Complet - Analyse exploratoire approfondie"""
+
+    st.markdown("### Analyse Exploratoire des Donnees (EDA)")
+
+    st.info("""
+    **Cette analyse complète examine tous les aspects de vos données:**
+
+     Aperçu général et types de variables
+     Qualité des données (valeurs manquantes, doublons, cardinalité)
+     Statistiques descriptives détaillées (moyenne, médiane, asymétrie, kurtosis)
+     Distribution des variables numériques et catégorielles
+     Détection des valeurs aberrantes (outliers)
+     Analyse des corrélations (fortes et modérées)
+     Recommandations actionnables pour le preprocessing
+     Visualisations: histogrammes, boxplots, barplots, heatmap de corrélation
+    """)
+
+    st.markdown("---")
+
+    # Afficher le rapport EDA stocké
+    if 'eda_report' in st.session_state and st.session_state.eda_report:
+        st.markdown(st.session_state.eda_report)
+
+        # Afficher les visualisations stockées
+        if 'eda_visualizations' in st.session_state and st.session_state.eda_visualizations:
+            visualizations = st.session_state.eda_visualizations
+
+            st.markdown("---")
+            st.markdown("## VISUALISATIONS")
+
+            # Histogrammes
+            if 'histogrammes' in visualizations:
+                st.markdown("### Distributions des variables numeriques (Histogrammes)")
+                img_data = base64.b64decode(visualizations['histogrammes'])
+                st.image(img_data, use_column_width=True)
+                st.markdown("---")
+
+            # Boxplots
+            if 'boxplots' in visualizations:
+                st.markdown("### Detection des outliers (Boxplots)")
+                img_data = base64.b64decode(visualizations['boxplots'])
+                st.image(img_data, use_column_width=True)
+                st.markdown("---")
+
+            # Barplots
+            if 'barplots' in visualizations:
+                st.markdown("### Repartition des variables categorielles (Top valeurs)")
+                img_data = base64.b64decode(visualizations['barplots'])
+                st.image(img_data, use_column_width=True)
+                st.markdown("---")
+
+            # Heatmap de correlation
+            if 'correlation_heatmap' in visualizations:
+                st.markdown("### Matrice de Correlation")
+                img_data = base64.b64decode(visualizations['correlation_heatmap'])
+                st.image(img_data, use_column_width=True)
+                st.markdown("---")
+
+        st.markdown("---")
+
+    # Bouton pour lancer l'EDA
+    if st.button("Lancer l'EDA Complet", type="primary"):
+        with st.spinner("Analyse en cours... Cela peut prendre quelques instants pour les gros datasets..."):
             # Récupérer le dataset
             dataset = st.session_state.get('shared_dataset')
-            
-            # Demander l'analyse complete
+
+            if dataset is None:
+                st.error("Aucun dataset charge. Veuillez d'abord charger un fichier.")
+                return
+
+            # Demander l'EDA complet
             st.session_state.bus.send_message(Message(
                 sender="Frontend",
                 receiver="ChefProjet",
                 message_type=MessageType.USER_MESSAGE,
-                content={'message': 'analyser', 'dataset': dataset}
+                content={'message': 'eda_complet', 'dataset': dataset}
             ))
-            
-            response = wait_for_response(max_wait=30)
-            
+
+            response = wait_for_response(max_wait=60)  # Plus de temps pour l'EDA complet
+
             if response:
                 if response.message_type == MessageType.AGENT_RESPONSE:
-                    st.markdown(response.content.get('message', ''))
+                    result = response.content.get('message', '')
+                    visualizations = response.content.get('visualizations', {})
+
+                    # Stocker le rapport et les visualisations
+                    st.session_state.eda_report = result
+                    st.session_state.eda_visualizations = visualizations
+
+                    st.success(" Analyse EDA complete terminee!")
+                    st.rerun()
+
                 elif response.message_type == MessageType.ERROR:
                     st.error(response.content.get('error', 'Erreur'))
             else:
-                st.error("Delai d'attente depasse")
+                st.error("Delai d'attente depasse. Le dataset est peut-etre trop volumineux.")
 
 
 def wait_for_response(max_wait=15):

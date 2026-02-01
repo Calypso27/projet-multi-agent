@@ -37,11 +37,6 @@ def show_upload_section():
             process_uploaded_file(uploaded_file)
     
     with col2:
-        st.markdown("### Formats supportes")
-        for ext, name in FileDetector.SUPPORTED_FORMATS.items():
-            st.markdown(f"- {name} (.{ext})")
-        
-        st.markdown("---")
         st.markdown("### Aide")
         st.markdown("Premiere fois? Essayez avec un fichier d'exemple pour decouvrir les fonctionnalites.")
 
@@ -85,7 +80,11 @@ def process_uploaded_file(uploaded_file):
                         st.session_state.shared_dataset = response.content.get('dataset')
                         st.session_state.dataset_profile = response.content.get('profile')
                         st.session_state.shared_dataset = response.content.get('dataset')  # CRUCIAL!
-                        
+
+                        # Marquer l'étape 1 du workflow comme complétée
+                        if 'workflow' in st.session_state:
+                            st.session_state.workflow['step_1_data_loaded'] = True
+
                         st.success(response.content.get('message', 'Fichier charge avec succes'))
                         
                         # Afficher les suggestions
@@ -114,7 +113,7 @@ def show_dataset_summary():
     profile = st.session_state.dataset_profile
     
     # Metriques
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Lignes", f"{info['rows']:,}")
     with col2:
@@ -123,27 +122,30 @@ def show_dataset_summary():
         st.metric("Type", info['data_type'])
     with col4:
         st.metric("Format", info['format'].upper())
+    with col5:
+        quality_score = info.get('quality_score', 0)
+        quality_delta = None
+        if quality_score >= 90:
+            quality_delta = "Excellent"
+        elif quality_score >= 70:
+            quality_delta = "Bon"
+        else:
+            quality_delta = "Améliorer"
+        st.metric("Qualité", f"{quality_score}/100", delta=quality_delta)
     
     st.markdown("---")
     
     # Suggestions
     if profile and profile.get('suggestions'):
         st.markdown("### Que voulez-vous faire ensuite?")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("Explorer les donnees", use_container_width=True):
-                st.session_state.current_page = "explore"
-                st.session_state.current_page_display = "Explorer"
-                st.rerun()
-        
-        with col2:
-            if st.button("Creer un modele predictif", use_container_width=True):
-                st.session_state.current_page = "predict"
-                st.session_state.current_page_display = "Predire"
-                st.rerun()
-        
+
+        if st.button("Explorer les donnees", use_container_width=True, type="primary"):
+            st.session_state.current_page = "explore"
+            st.session_state.current_page_display = "Explorer"
+            st.rerun()
+
+        st.info("**Conseil**: Explorez d'abord vos données pour comprendre leur structure et leur qualité avant de créer un modèle prédictif.")
+
         st.markdown("---")
         
         # Details des suggestions

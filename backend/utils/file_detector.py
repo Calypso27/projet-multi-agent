@@ -45,7 +45,18 @@ class FileDetector:
                 df = FileDetector._read_csv_with_encoding(file_data)
             
             elif format_type in ['xlsx', 'xls']:
-                df = pd.read_excel(file_data)
+                # Spécifier le moteur explicitement selon l'extension
+                engine = 'openpyxl' if format_type == 'xlsx' else 'xlrd'
+                try:
+                    df = pd.read_excel(file_data, engine=engine)
+                except Exception as excel_error:
+                    # Si l'erreur suggère que c'est un CSV déguisé, essayer de lire comme CSV
+                    error_msg = str(excel_error).lower()
+                    if 'bof record' in error_msg or 'corrupt file' in error_msg or 'unsupported format' in error_msg:
+                        file_data.seek(0)
+                        df = FileDetector._read_csv_with_encoding(file_data)
+                    else:
+                        raise
             
             elif format_type == 'json':
                 df = pd.read_json(file_data)

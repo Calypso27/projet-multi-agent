@@ -6,6 +6,13 @@ import time
 from ..models.message import Message, MessageType
 from ..communication.message_bus import get_message_bus
 
+# Import pour gérer le contexte Streamlit dans les threads
+try:
+    from streamlit.runtime.scriptrunner import add_script_run_ctx
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+
 
 class BaseAgent(ABC):
     """Classe abstraite de base pour tous les agents"""
@@ -27,6 +34,15 @@ class BaseAgent(ABC):
         if not self.is_running:
             self.is_running = True
             self.listener_thread = threading.Thread(target=self._listen_loop, daemon=True)
+
+            # Ajouter le contexte Streamlit au thread si disponible
+            if STREAMLIT_AVAILABLE:
+                try:
+                    add_script_run_ctx(self.listener_thread)
+                except Exception:
+                    # Si l'ajout du contexte échoue, continuer sans
+                    pass
+
             self.listener_thread.start()
             print(f"Agent {self.name} démarré")
     
@@ -45,7 +61,10 @@ class BaseAgent(ABC):
                 try:
                     self.handle_message(message)
                 except Exception as e:
-                    print(f"Erreur dans {self.name}: {e}")
+                    # Ignorer les erreurs liées au ScriptRunContext manquant
+                    error_str = str(e)
+                    if "ScriptRunContext" not in error_str:
+                        print(f"Erreur dans {self.name}: {e}")
             time.sleep(0.05)
     
     @abstractmethod

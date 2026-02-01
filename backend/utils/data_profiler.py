@@ -30,13 +30,20 @@ class DataProfiler:
     def _analyze_column_types(df: pd.DataFrame) -> Dict[str, int]:
         """Compte les types de colonnes"""
         numeric = len(df.select_dtypes(include=['int64', 'float64']).columns)
-        categorical = len(df.select_dtypes(include=['object']).columns)
-        datetime = len(df.select_dtypes(include=['datetime64']).columns)
-        
+
+        # Détecter les colonnes de dates (y compris celles en format object)
+        date_cols = DataProfiler._detect_date_columns(df)
+        datetime_count = len(date_cols)
+
+        # Pour les catégorielles, exclure les colonnes détectées comme dates
+        categorical_cols = df.select_dtypes(include=['object']).columns
+        categorical_non_date = [col for col in categorical_cols if col not in date_cols]
+        categorical = len(categorical_non_date)
+
         return {
             'numeric': numeric,
             'categorical': categorical,
-            'datetime': datetime
+            'datetime': datetime_count
         }
     
     @staticmethod
@@ -78,14 +85,64 @@ class DataProfiler:
         """Vérifie si une série ressemble à des dates"""
         if len(series) == 0:
             return False
-        
-        sample = series.dropna().head(10)
-        
-        try:
-            pd.to_datetime(sample)
-            return True
-        except:
+
+        # Prendre un échantillon plus large pour être plus représentatif
+        sample = series.dropna().head(50)
+
+        if len(sample) == 0:
             return False
+
+        # Essayer plusieurs méthodes de détection
+        # Méthode 1: Conversion directe avec infer_datetime_format
+        try:
+            converted = pd.to_datetime(sample, infer_datetime_format=True, errors='coerce')
+            # Si plus de 80% des valeurs sont converties avec succès, c'est probablement une date
+            success_rate = converted.notna().sum() / len(sample)
+            if success_rate > 0.8:
+                return True
+        except:
+            pass
+
+        # Méthode 2: Vérifier si le nom de la colonne suggère une date
+        col_name = series.name.lower() if hasattr(series, 'name') and series.name else ''
+        date_keywords = ['date', 'time', 'year', 'month', 'day', 'datetime', 'timestamp',
+                        'created', 'updated', 'modified', 'annee', 'mois', 'jour', 'heure',
+                        'season', 'saison']
+        if any(keyword in col_name for keyword in date_keywords):
+            # Si le nom suggère une date, essayer une conversion plus permissive
+            try:
+                converted = pd.to_datetime(sample, errors='coerce')
+                success_rate = converted.notna().sum() / len(sample)
+                if success_rate > 0.5:  # Seuil plus bas si le nom suggère une date
+                    return True
+            except:
+                pass
+
+            # Si c'est potentiellement une année seule, vérifier les valeurs
+            if any(kw in col_name for kw in ['year', 'annee', 'season', 'saison']):
+                try:
+                    # Vérifier si les valeurs ressemblent à des années (1900-2100)
+                    numeric_sample = pd.to_numeric(sample, errors='coerce')
+                    if numeric_sample.notna().sum() > 0:
+                        years_in_range = ((numeric_sample >= 1900) & (numeric_sample <= 2100)).sum()
+                        if years_in_range / len(sample) > 0.7:
+                            return True
+                except:
+                    pass
+
+        # Méthode 3: Vérifier les patterns de dates communs
+        sample_str = sample.astype(str).head(20)
+        date_pattern_count = 0
+        for val in sample_str:
+            # Patterns communs: YYYY-MM-DD, DD/MM/YYYY, MM-DD-YYYY, etc.
+            if any(sep in val for sep in ['-', '/', '.']) and any(char.isdigit() for char in val):
+                date_pattern_count += 1
+
+        # Si plus de 70% des échantillons ont un pattern de date
+        if date_pattern_count / len(sample_str) > 0.7:
+            return True
+
+        return False
     
     @staticmethod
     def _generate_suggestions(df: pd.DataFrame) -> List[Dict[str, str]]:
