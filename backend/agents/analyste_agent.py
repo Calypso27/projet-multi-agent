@@ -1,4 +1,4 @@
-"""Agent Analyste - Analyse exploratoire des données"""
+"""Agent Analyste"""
 import pandas as pd
 import numpy as np
 import io
@@ -7,10 +7,9 @@ from typing import Dict, Any, Optional, List, Tuple
 from ..models.message import Message, MessageType
 from .base_agent import BaseAgent
 
-# Imports optionnels pour la visualisation
 try:
     import matplotlib
-    matplotlib.use('Agg')  # Mode non-interactif pour serveur
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import seaborn as sns
     from scipy import stats
@@ -20,26 +19,12 @@ except ImportError:
 
 
 class AnalysteAgent(BaseAgent):
-    """
-    Agent Analyste
-    - Analyse exploratoire des données (EDA)
-    - Statistiques descriptives
-    - Détection de problèmes de qualité
-    """
-    
     def __init__(self):
         super().__init__(name="Analyste", role="Analyste Exploratoire")
         self.last_analysis = None
         self.eda_report = None
 
     def _eda_complet(self, df: pd.DataFrame) -> Tuple[str, Dict[str, str]]:
-        """
-        Effectue une Analyse Exploratoire de Données (EDA) complète et minutieuse
-
-        Retourne:
-        - str: Rapport textuel détaillé
-        - Dict: Dictionnaire de visualisations en base64
-        """
         if df is None or df.empty:
             return "Aucune donnée à analyser", {}
 
@@ -47,47 +32,39 @@ class AnalysteAgent(BaseAgent):
         report = "# RAPPORT D'ANALYSE EXPLORATOIRE DES DONNÉES (EDA)\n\n"
         report += "---\n\n"
 
-        # 1. APERÇU GÉNÉRAL
         report += "## 1. APERÇU GÉNÉRAL DES DONNÉES\n\n"
         report += self._section_apercu_general(df)
 
-        # 2. QUALITÉ DES DONNÉES
         report += "\n## 2. QUALITÉ DES DONNÉES\n\n"
         report += self._section_qualite_donnees(df)
 
-        # 3. ANALYSE UNIVARIÉE - VARIABLES NUMÉRIQUES
         report += "\n## 3. ANALYSE UNIVARIÉE - VARIABLES NUMÉRIQUES\n\n"
         numeric_analysis, numeric_viz = self._analyse_variables_numeriques(df)
         report += numeric_analysis
         if numeric_viz:
             visualizations.update(numeric_viz)
 
-        # 4. ANALYSE UNIVARIÉE - VARIABLES CATÉGORIELLES
         report += "\n## 4. ANALYSE UNIVARIÉE - VARIABLES CATÉGORIELLES\n\n"
         cat_analysis, cat_viz = self._analyse_variables_categorielles(df)
         report += cat_analysis
         if cat_viz:
             visualizations.update(cat_viz)
 
-        # 5. DÉTECTION DES OUTLIERS
         report += "\n## 5. DÉTECTION DES VALEURS ABERRANTES (OUTLIERS)\n\n"
         outlier_analysis, outlier_viz = self._detecter_outliers(df)
         report += outlier_analysis
         if outlier_viz:
             visualizations.update(outlier_viz)
 
-        # 6. ANALYSE BIVARIÉE - CORRÉLATIONS
         report += "\n## 6. ANALYSE BIVARIÉE - CORRÉLATIONS\n\n"
         corr_analysis, corr_viz = self._analyse_correlations(df)
         report += corr_analysis
         if corr_viz:
             visualizations.update(corr_viz)
 
-        # 7. RECOMMANDATIONS
         report += "\n## 7. RECOMMANDATIONS POUR LA SUITE\n\n"
         report += self._generer_recommandations(df)
 
-        # 8. CONCLUSION
         report += "\n## 8. CONCLUSION DE L'EDA\n\n"
         report += self._generer_conclusion(df)
 
@@ -95,8 +72,6 @@ class AnalysteAgent(BaseAgent):
         return report, visualizations
 
     def handle_message(self, message: Message):
-        """Traite les messages"""
-
         if message.message_type == MessageType.TASK_REQUEST:
             task = message.content.get("task")
             dataset = message.content.get("dataset")
@@ -136,22 +111,17 @@ class AnalysteAgent(BaseAgent):
                     content={"task": task, "result": result},
                     conversation_id=message.conversation_id
                 )
-    
+
     def _analyse_complete_with_heatmap(self, df: pd.DataFrame):
-        """Analyse complète du dataset avec heatmap de corrélations"""
         if df is None or df.empty:
             return "Aucune donnée à analyser", None
 
-        # Générer le texte d'analyse
         text_result = self._analyse_complete(df)
-
-        # Générer le heatmap de corrélations
         heatmap_data = self._generate_correlation_heatmap(df)
 
         return text_result, heatmap_data
 
     def _generate_correlation_heatmap(self, df: pd.DataFrame):
-        """Génère un heatmap des corrélations et le retourne sous forme de données"""
         if not VISUALIZATION_AVAILABLE:
             return None
 
@@ -161,13 +131,9 @@ class AnalysteAgent(BaseAgent):
             return None
 
         try:
-            # Calculer la matrice de corrélation
             corr_matrix = df[numeric_cols].corr()
-
-            # Créer la figure
             fig, ax = plt.subplots(figsize=(12, 10))
 
-            # Créer le heatmap avec seaborn
             sns.heatmap(
                 corr_matrix,
                 annot=True,
@@ -185,7 +151,6 @@ class AnalysteAgent(BaseAgent):
             ax.set_title('Matrice de Corrélation', fontsize=16, fontweight='bold', pad=20)
             plt.tight_layout()
 
-            # Convertir en base64 pour le transmettre
             buf = io.BytesIO()
             fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
             buf.seek(0)
@@ -198,16 +163,11 @@ class AnalysteAgent(BaseAgent):
             return None
 
     def _analyse_complete(self, df: pd.DataFrame) -> str:
-        """Analyse complète du dataset"""
         if df is None or df.empty:
             return "Aucune donnée à analyser"
-        
+
         result = "# ANALYSE COMPLETE DU DATASET\n\n"
-        
-        # Informations générales
         result += f"**Dimensions:** {df.shape[0]} lignes × {df.shape[1]} colonnes\n\n"
-        
-        # Colonnes avec tableau
         result += "## Colonnes\n\n"
         result += "| Nom | Type | Valeurs uniques |\n"
         result += "|-----|------|----------------|\n"
@@ -215,10 +175,9 @@ class AnalysteAgent(BaseAgent):
             dtype = df[col].dtype
             unique_count = df[col].nunique()
             result += f"| {col} | {dtype} | {unique_count} |\n"
-        
+
         result += "\n"
-        
-        # Valeurs manquantes
+
         missing = df.isnull().sum()
         if missing.sum() > 0:
             result += "## Valeurs manquantes\n\n"
@@ -230,26 +189,23 @@ class AnalysteAgent(BaseAgent):
         else:
             result += "## Qualité des données\n\n"
             result += "✓ Aucune valeur manquante détectée\n"
-        
+
         result += "\n"
-        
-        # Statistiques pour colonnes numériques
+
         numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
         if len(numeric_cols) > 0:
             result += "## Statistiques (colonnes numériques)\n\n"
             result += "| Colonne | Moyenne | Médiane | Min | Max | Écart-type |\n"
             result += "|---------|---------|---------|-----|-----|------------|\n"
-            for col in numeric_cols[:10]:  # Limiter à 10 colonnes
+            for col in numeric_cols[:10]:
                 result += f"| {col} | {df[col].mean():.2f} | {df[col].median():.2f} | {df[col].min():.2f} | {df[col].max():.2f} | {df[col].std():.2f} |\n"
-        
+
         result += "\n"
-        
-        # Corrélations
+
         if len(numeric_cols) > 1:
             result += "## Corrélations principales\n\n"
             corr = df[numeric_cols].corr()
-            
-            # Trouver les corrélations fortes (> 0.7 ou < -0.7)
+
             strong_corr = []
             for i in range(len(corr.columns)):
                 for j in range(i+1, len(corr.columns)):
@@ -260,29 +216,27 @@ class AnalysteAgent(BaseAgent):
             if strong_corr:
                 result += "| Variable 1 | Variable 2 | Corrélation |\n"
                 result += "|------------|------------|-------------|\n"
-                for col1, col2, val in strong_corr[:10]:  # Top 10
+                for col1, col2, val in strong_corr[:10]:
                     result += f"| {col1} | {col2} | {val:.3f} |\n"
             else:
                 result += "Aucune corrélation forte (>0.7) détectée\n"
-        
+
         self.last_analysis = result
         return result
-    
+
     def _statistiques_descriptives(self, df: pd.DataFrame) -> str:
-        """Statistiques descriptives"""
         if df is None or df.empty:
             return "Aucune donnée à analyser"
-        
+
         result = "# STATISTIQUES DESCRIPTIVES\n\n"
-        
         numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
-        
+
         if len(numeric_cols) == 0:
             return "Aucune colonne numérique à analyser"
-        
+
         result += "| Colonne | Valeurs | Moyenne | Médiane | Écart-type | Min | Q1 | Q3 | Max |\n"
         result += "|---------|---------|---------|---------|------------|-----|----|----|-----|\n"
-        
+
         for col in numeric_cols:
             count = df[col].count()
             mean = df[col].mean()
@@ -292,21 +246,18 @@ class AnalysteAgent(BaseAgent):
             q1 = df[col].quantile(0.25)
             q3 = df[col].quantile(0.75)
             max_val = df[col].max()
-            
+
             result += f"| {col} | {count} | {mean:.2f} | {median:.2f} | {std:.2f} | {min_val:.2f} | {q1:.2f} | {q3:.2f} | {max_val:.2f} |\n"
-        
+
         return result
-    
+
     def _resume_dataset(self, df: pd.DataFrame) -> str:
-        """Résumé du dataset"""
         if df is None or df.empty:
             return "Aucune donnée à analyser"
-        
+
         result = "# RESUME DU DATASET\n\n"
-        
         result += f"**Taille:** {df.shape[0]} lignes × {df.shape[1]} colonnes\n\n"
-        
-        # Types de colonnes
+
         numeric_count = len(df.select_dtypes(include=['int64', 'float64']).columns)
         text_count = len(df.select_dtypes(include=['object']).columns)
         date_count = len(df.select_dtypes(include=['datetime64']).columns)
@@ -317,8 +268,7 @@ class AnalysteAgent(BaseAgent):
         result += f"| Numériques | {numeric_count} |\n"
         result += f"| Texte | {text_count} |\n"
         result += f"| Dates | {date_count} |\n\n"
-        
-        # Qualité des données
+
         total_cells = df.shape[0] * df.shape[1]
         missing_cells = df.isnull().sum().sum()
         missing_pct = (missing_cells / total_cells) * 100
@@ -330,22 +280,17 @@ class AnalysteAgent(BaseAgent):
         result += f"| Cellules totales | {total_cells:,} |\n"
         result += f"| Cellules manquantes | {missing_cells} ({missing_pct:.1f}%) |\n"
         result += f"| Lignes dupliquées | {duplicates} |\n\n"
-        
-        # Aperçu des premières lignes
+
         result += "## Aperçu des données (3 premières lignes)\n\n"
-        
-        # Créer un tableau markdown
+
         preview = df.head(3)
-        
-        # En-têtes
+
         result += "| " + " | ".join(preview.columns) + " |\n"
         result += "|" + "|".join(["---"] * len(preview.columns)) + "|\n"
-        
-        # Lignes
+
         for idx, row in preview.iterrows():
             values = []
             for val in row:
-                # Formater les valeurs
                 if pd.isna(val):
                     values.append("N/A")
                 elif isinstance(val, float):
@@ -356,10 +301,7 @@ class AnalysteAgent(BaseAgent):
 
         return result
 
-    # ========== MÉTHODES POUR L'EDA COMPLET ==========
-
     def _section_apercu_general(self, df: pd.DataFrame) -> str:
-        """Section 1: Aperçu général"""
         result = f"**Dimensions:** {df.shape[0]:,} lignes × {df.shape[1]} colonnes\n\n"
 
         result += "### 1.1 Types de variables\n\n"
@@ -395,7 +337,6 @@ class AnalysteAgent(BaseAgent):
         return result + "\n"
 
     def _section_qualite_donnees(self, df: pd.DataFrame) -> str:
-        """Section 2: Qualité des données"""
         result = "### 2.1 Valeurs manquantes\n\n"
 
         missing = df.isnull().sum()
@@ -421,7 +362,6 @@ class AnalysteAgent(BaseAgent):
         return result + "\n"
 
     def _analyse_variables_numeriques(self, df: pd.DataFrame) -> Tuple[str, Dict]:
-        """Section 3: Analyse des variables numériques"""
         numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
 
         if len(numeric_cols) == 0:
@@ -454,10 +394,8 @@ class AnalysteAgent(BaseAgent):
 
             result += f"- **{col}**: Distribution {distrib}\n"
 
-        # Générer les visualisations
         visualizations = {}
         if VISUALIZATION_AVAILABLE:
-            # Histogrammes
             hist_img = self._generer_histogrammes(df, numeric_cols)
             if hist_img:
                 visualizations['histogrammes'] = hist_img
@@ -465,7 +403,6 @@ class AnalysteAgent(BaseAgent):
         return result + "\n", visualizations
 
     def _analyse_variables_categorielles(self, df: pd.DataFrame) -> Tuple[str, Dict]:
-        """Section 4: Analyse des variables catégorielles"""
         categorical_cols = df.select_dtypes(include=['object']).columns
 
         if len(categorical_cols) == 0:
@@ -498,7 +435,6 @@ class AnalysteAgent(BaseAgent):
                 result += f"| {val_str} | {count:,} | {pct:.2f}% |\n"
             result += "\n"
 
-        # Générer les visualisations
         visualizations = {}
         if VISUALIZATION_AVAILABLE:
             bar_img = self._generer_barplots(df, categorical_cols)
@@ -508,7 +444,6 @@ class AnalysteAgent(BaseAgent):
         return result, visualizations
 
     def _detecter_outliers(self, df: pd.DataFrame) -> Tuple[str, Dict]:
-        """Section 5: Détection des outliers"""
         numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
 
         if len(numeric_cols) == 0:
@@ -541,7 +476,6 @@ class AnalysteAgent(BaseAgent):
 
             result += f"| {col} | {lower_outliers} | {upper_outliers} | {total_outliers} | {pct:.2f}% |\n"
 
-        # Générer les visualisations
         visualizations = {}
         if VISUALIZATION_AVAILABLE:
             box_img = self._generer_boxplots(df, numeric_cols)
@@ -551,7 +485,6 @@ class AnalysteAgent(BaseAgent):
         return result + "\n", visualizations
 
     def _analyse_correlations(self, df: pd.DataFrame) -> Tuple[str, Dict]:
-        """Section 6: Analyse des corrélations"""
         numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
 
         if len(numeric_cols) < 2:
@@ -593,7 +526,6 @@ class AnalysteAgent(BaseAgent):
         else:
             result += "Aucune corrélation modérée détectée.\n"
 
-        # Générer le heatmap
         visualizations = {}
         if VISUALIZATION_AVAILABLE:
             heatmap_img = self._generate_correlation_heatmap(df)
@@ -603,7 +535,6 @@ class AnalysteAgent(BaseAgent):
         return result + "\n", visualizations
 
     def _generer_recommandations(self, df: pd.DataFrame) -> str:
-        """Section 7: Recommandations"""
         result = ""
         recommendations = []
 
@@ -674,10 +605,7 @@ class AnalysteAgent(BaseAgent):
         return result + "\n"
 
     def _generer_conclusion(self, df: pd.DataFrame) -> str:
-        """Section 8: Conclusion"""
         result = ""
-
-        # Résumé global
         result += "### Résumé exécutif\n\n"
         result += f"- **Dataset**: {df.shape[0]:,} observations × {df.shape[1]} variables\n"
 
@@ -701,10 +629,7 @@ class AnalysteAgent(BaseAgent):
 
         return result
 
-    # ========== MÉTHODES DE VISUALISATION ==========
-
     def _generer_histogrammes(self, df: pd.DataFrame, numeric_cols) -> Optional[str]:
-        """Génère des histogrammes pour les variables numériques"""
         if not VISUALIZATION_AVAILABLE or len(numeric_cols) == 0:
             return None
 
@@ -746,7 +671,6 @@ class AnalysteAgent(BaseAgent):
             return None
 
     def _generer_boxplots(self, df: pd.DataFrame, numeric_cols) -> Optional[str]:
-        """Génère des boxplots pour détecter les outliers"""
         if not VISUALIZATION_AVAILABLE or len(numeric_cols) == 0:
             return None
 
@@ -786,7 +710,6 @@ class AnalysteAgent(BaseAgent):
             return None
 
     def _generer_barplots(self, df: pd.DataFrame, categorical_cols) -> Optional[str]:
-        """Génère des barplots pour les variables catégorielles"""
         if not VISUALIZATION_AVAILABLE or len(categorical_cols) == 0:
             return None
 

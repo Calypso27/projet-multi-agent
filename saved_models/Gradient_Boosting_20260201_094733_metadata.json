@@ -1,0 +1,28 @@
+{
+  "model_id": "Gradient_Boosting_20260201_094733",
+  "created_at": "2026-02-01T09:47:33.234917",
+  "model_name": "Gradient Boosting",
+  "problem_type": "regression",
+  "target_column": "charges",
+  "feature_names": [
+    "age",
+    "sex",
+    "bmi",
+    "children",
+    "smoker",
+    "region_freq_encode"
+  ],
+  "metrics": {
+    "R²": 0.9006,
+    "RMSE": 4274.2324,
+    "MAE": 2499.8416
+  },
+  "preprocessing": {
+    "one_hot_encoding": true,
+    "missing_value_strategy": "median",
+    "test_size": 0.2,
+    "random_state": 42
+  },
+  "model_path": "saved_models\\Gradient_Boosting_20260201_094733_model.pkl",
+  "metadata_path": "saved_models\\Gradient_Boosting_20260201_094733_metadata.json"
+}

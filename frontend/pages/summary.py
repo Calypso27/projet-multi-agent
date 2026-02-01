@@ -1,4 +1,4 @@
-"""Page Executive Summary - Rapport synthétique pour le client"""
+"""Page de rapport"""
 import streamlit as st
 from datetime import datetime
 import pandas as pd
@@ -7,8 +7,6 @@ from backend.utils.data_quality_scorer import DataQualityScorer
 
 
 def render_summary():
-    """Affiche le résumé exécutif professionnel"""
-
     st.markdown("# Executive Summary")
     st.markdown("*Rapport synthétique pour la présentation client*")
 
@@ -39,14 +37,11 @@ def render_summary():
                 st.rerun()
         return
 
-    # En-tête professionnel
     st.markdown("---")
 
-    # Informations du projet
     info = st.session_state.dataset_info
     profile = st.session_state.dataset_profile
 
-    # Section 1: Vue d'ensemble du projet
     st.markdown("## 1. Vue d'ensemble du projet")
 
     col1, col2 = st.columns([2, 1])
@@ -61,7 +56,6 @@ def render_summary():
         """)
 
     with col2:
-        # Score de qualité global
         quality_score = info.get('quality_score', 0)
         quality_grade = info.get('quality_grade', 'N/A')
 
@@ -86,7 +80,6 @@ def render_summary():
 
     st.markdown("---")
 
-    # Section 2: Indicateurs clés (KPI)
     st.markdown("## 2. Indicateurs clés de performance (KPI)")
 
     kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
@@ -118,7 +111,6 @@ def render_summary():
         )
 
     with kpi_col4:
-        # Compter les modèles entraînés
         models = ModelManager.list_models()
         models_for_dataset = [m for m in models if m['target'] in info.get('column_names', [])]
         st.metric(
@@ -129,7 +121,6 @@ def render_summary():
 
     st.markdown("---")
 
-    # Section 3: Analyse de la qualité des données
     st.markdown("## 3. Évaluation de la qualité des données")
 
     if 'quality_report' in profile:
@@ -141,7 +132,6 @@ def render_summary():
         dim_keys = ['completeness', 'validity', 'consistency', 'uniqueness', 'accuracy']
         dim_scores = [dimensions[key]['score'] for key in dim_keys]
 
-        # Créer un DataFrame pour l'affichage
         quality_df = pd.DataFrame({
             'Dimension': dim_names,
             'Score': dim_scores,
@@ -150,7 +140,6 @@ def render_summary():
 
         st.dataframe(quality_df, use_container_width=True, hide_index=True)
 
-        # Recommandations prioritaires
         st.markdown("### Recommandations prioritaires")
 
         recommendations = quality_report.get('recommendations', [])
@@ -164,7 +153,7 @@ def render_summary():
 
         if warning_recs:
             st.warning("**Améliorations recommandées:**")
-            for rec in warning_recs[:3]:  # Top 3
+            for rec in warning_recs[:3]:
                 st.markdown(f"- {rec}")
 
         if not critical_recs and not warning_recs:
@@ -172,7 +161,6 @@ def render_summary():
 
     st.markdown("---")
 
-    # Section 4: Caractéristiques des données
     st.markdown("## 4. Caractéristiques des données")
 
     col1, col2 = st.columns(2)
@@ -221,7 +209,6 @@ def render_summary():
 
     st.markdown("---")
 
-    # Section 5: Modèles Machine Learning
     st.markdown("## 5. Modèles Machine Learning développés")
 
     models = ModelManager.list_models()
@@ -229,7 +216,6 @@ def render_summary():
     if models:
         st.success(f"{len(models)} modèle(s) entraîné(s) et disponible(s) pour déploiement")
 
-        # Tableau des modèles
         models_df = pd.DataFrame([{
             'Modèle': m['name'],
             'Type': m['type'].capitalize(),
@@ -241,9 +227,8 @@ def render_summary():
 
         st.dataframe(models_df, use_container_width=True, hide_index=True)
 
-        # Meilleur modèle
         if models:
-            best_model = models[0]  # Les modèles sont triés par date
+            best_model = models[0]
             st.markdown(f"""
             **Modèle recommandé pour le déploiement:**
             - **Nom:** {best_model['name']}
@@ -261,12 +246,10 @@ def render_summary():
 
     st.markdown("---")
 
-    # Section 6: Prochaines étapes
     st.markdown("## 6. Prochaines étapes recommandées")
 
     next_steps = []
 
-    # Vérifier ce qui a été fait
     has_models = len(models) > 0
     quality_ok = info.get('quality_score', 0) >= 70
 
@@ -303,19 +286,16 @@ def render_summary():
         'description': 'Améliorer les performances des modèles existants'
     })
 
-    # Afficher sous forme de tableau
     steps_df = pd.DataFrame(next_steps)
     st.dataframe(steps_df, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
-    # Section 7: Export du rapport
     st.markdown("## 7. Export du rapport")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        # Générer le rapport complet en markdown
         full_report = _generate_full_markdown_report(info, profile, models)
 
         st.download_button(
@@ -327,7 +307,6 @@ def render_summary():
         )
 
     with col2:
-        # Export des données de qualité
         if 'quality_report' in profile:
             quality_md = DataQualityScorer.format_report(profile['quality_report'])
 
@@ -340,11 +319,9 @@ def render_summary():
             )
 
     with col3:
-        # Export JSON pour intégration
         import json
         import numpy as np
 
-        # Fonction pour convertir les types numpy en types Python natifs
         def convert_numpy_types(obj):
             if isinstance(obj, (np.integer, np.int32, np.int64)):
                 return int(obj)
@@ -377,7 +354,6 @@ def render_summary():
 
     st.markdown("---")
 
-    # Footer professionnel
     st.markdown("""
     <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-radius: 5px; margin-top: 30px;">
         <p style="margin: 0; color: #666; font-size: 14px;">
@@ -391,7 +367,6 @@ def render_summary():
 
 
 def _format_model_performance(metrics: dict, problem_type: str) -> str:
-    """Formate les métriques de performance du modèle"""
     if problem_type == 'regression':
         r2 = metrics.get('R²', 0)
         return f"R² = {r2:.3f}"
@@ -401,8 +376,6 @@ def _format_model_performance(metrics: dict, problem_type: str) -> str:
 
 
 def _generate_full_markdown_report(info: dict, profile: dict, models: list) -> str:
-    """Génère un rapport markdown complet prêt pour conversion PDF"""
-
     report = f"""# Executive Summary - Analyse de Données
 
 **Dataset:** {info['filename']}

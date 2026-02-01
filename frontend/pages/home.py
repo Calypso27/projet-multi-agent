@@ -1,4 +1,4 @@
-"""Page d'accueil - Upload de fichier"""
+"""Page d'accueil"""
 import streamlit as st
 import io
 from backend.models.message import Message, MessageType
@@ -6,11 +6,9 @@ from backend.utils.file_detector import FileDetector
 
 
 def render_home():
-    """Affiche la page d'accueil"""
-    
-    st.markdown('<h1 class="main-header">Assistant Analyse de Donnees</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Analysez vos donnees et creez des modeles predictifs simplement</p>', unsafe_allow_html=True)
-    
+    st.markdown("# Données")
+    st.markdown("*Chargez et analysez vos fichiers de données*")
+
     if not st.session_state.dataset_loaded:
         show_upload_section()
     else:
@@ -18,38 +16,31 @@ def render_home():
 
 
 def show_upload_section():
-    """Section d'upload de fichier"""
-    
     col1, col2 = st.columns([2, 1])
-    
+
     with col1:
         st.markdown("### Commencer")
-        st.markdown("Pour commencer, uploadez votre fichier de donnees:")
-        
-        # File uploader
+        st.markdown("Pour commencer, uploadez votre fichier de données :")
+
         uploaded_file = st.file_uploader(
             "Glissez votre fichier ici",
             type=['csv', 'xlsx', 'xls', 'json', 'parquet', 'tsv', 'txt'],
-            help=f"Formats supportes: {FileDetector.get_supported_formats_string()}"
+            help=f"Formats supportés : {FileDetector.get_supported_formats_string()}"
         )
-        
+
         if uploaded_file is not None:
             process_uploaded_file(uploaded_file)
-    
+
     with col2:
         st.markdown("### Aide")
-        st.markdown("Premiere fois? Essayez avec un fichier d'exemple pour decouvrir les fonctionnalites.")
+        st.markdown("Première fois ? Essayez avec un fichier d'exemple pour découvrir les fonctionnalités.")
 
 
 def process_uploaded_file(uploaded_file):
-    """Traite le fichier uploade"""
-    
     with st.spinner('Chargement et analyse du fichier...'):
-        # Convertir en bytes pour l'agent
         file_data = io.BytesIO(uploaded_file.getvalue())
         filename = uploaded_file.name
-        
-        # Envoyer au Chef de Projet
+
         st.session_state.bus.send_message(Message(
             sender="Frontend",
             receiver="ChefProjet",
@@ -59,60 +50,50 @@ def process_uploaded_file(uploaded_file):
                 'filename': filename
             }
         ))
-        
-        # Attendre la reponse
+
         import time
         max_attempts = 30
         for _ in range(max_attempts):
             time.sleep(0.5)
             response = st.session_state.bus.receive_message("Frontend")
-            
+
             if response:
                 if response.message_type == MessageType.ERROR:
                     st.error(f"Erreur: {response.content.get('error', 'Erreur inconnue')}")
                     return
-                
+
                 elif response.message_type == MessageType.DATA_VALIDATION:
                     if response.content.get('valid'):
-                        # Stocker les informations ET le dataset
                         st.session_state.dataset_loaded = True
                         st.session_state.dataset_info = response.content.get('metadata')
                         st.session_state.shared_dataset = response.content.get('dataset')
                         st.session_state.dataset_profile = response.content.get('profile')
-                        st.session_state.shared_dataset = response.content.get('dataset')  # CRUCIAL!
 
-                        # Marquer l'étape 1 du workflow comme complétée
                         if 'workflow' in st.session_state:
                             st.session_state.workflow['step_1_data_loaded'] = True
 
-                        st.success(response.content.get('message', 'Fichier charge avec succes'))
-                        
-                        # Afficher les suggestions
+                        st.success(response.content.get('message', 'Fichier chargé avec succès'))
+
                         if st.session_state.dataset_profile:
                             suggestions = st.session_state.dataset_profile.get('suggestions', [])
                             if suggestions:
-                                st.markdown("### Que voulez-vous faire?")
+                                st.markdown("### Que voulez-vous faire ?")
                                 for sugg in suggestions:
                                     with st.expander(f"{sugg['title']}"):
                                         st.markdown(sugg['description'])
-                        
+
                         st.rerun()
                         return
-        
-        st.error("Delai d'attente depasse")
+
+        st.error("Délai d'attente dépassé")
 
 
 def show_dataset_summary():
-    """Affiche le resume du dataset charge"""
-    
-    st.markdown('<div class="success-box">', unsafe_allow_html=True)
-    st.markdown("### Fichier charge avec succes")
-    st.markdown('</div>', unsafe_allow_html=True)
-    
+    st.success("**Fichier chargé avec succès**")
+
     info = st.session_state.dataset_info
     profile = st.session_state.dataset_profile
-    
-    # Metriques
+
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Lignes", f"{info['rows']:,}")
@@ -124,7 +105,6 @@ def show_dataset_summary():
         st.metric("Format", info['format'].upper())
     with col5:
         quality_score = info.get('quality_score', 0)
-        quality_delta = None
         if quality_score >= 90:
             quality_delta = "Excellent"
         elif quality_score >= 70:
@@ -132,14 +112,13 @@ def show_dataset_summary():
         else:
             quality_delta = "Améliorer"
         st.metric("Qualité", f"{quality_score}/100", delta=quality_delta)
-    
-    st.markdown("---")
-    
-    # Suggestions
-    if profile and profile.get('suggestions'):
-        st.markdown("### Que voulez-vous faire ensuite?")
 
-        if st.button("Explorer les donnees", use_container_width=True, type="primary"):
+    st.markdown("---")
+
+    if profile and profile.get('suggestions'):
+        st.markdown("### Que voulez-vous faire ensuite ?")
+
+        if st.button("Explorer les données", use_container_width=True, type="primary"):
             st.session_state.current_page = "explore"
             st.session_state.current_page_display = "Explorer"
             st.rerun()
@@ -147,8 +126,7 @@ def show_dataset_summary():
         st.info("**Conseil**: Explorez d'abord vos données pour comprendre leur structure et leur qualité avant de créer un modèle prédictif.")
 
         st.markdown("---")
-        
-        # Details des suggestions
+
         st.markdown("### Suggestions automatiques")
         for sugg in profile['suggestions']:
             with st.expander(f"{sugg['title']}"):

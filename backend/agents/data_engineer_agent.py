@@ -1,4 +1,4 @@
-"""Agent Ingénieur Données - Version améliorée avec support multi-format et preprocessing"""
+"""Agent Ingenieur Donnees"""
 import pandas as pd
 import io
 from typing import Dict, Any, Optional
@@ -11,14 +11,6 @@ from ..utils.data_quality_scorer import DataQualityScorer
 
 
 class DataEngineerAgent(BaseAgent):
-    """
-    Agent Ingénieur Données
-    - Upload multi-format (CSV, Excel, JSON, Parquet, etc.)
-    - Validation automatique
-    - Profiling intelligent
-    - Preprocessing (nettoyage, encodage, normalisation, train/test split)
-    """
-
     def __init__(self):
         super().__init__(name="DataEngineer", role="Ingénieur Données")
         self.current_dataset: Optional[pd.DataFrame] = None
@@ -26,10 +18,8 @@ class DataEngineerAgent(BaseAgent):
         self.dataset_profile: Dict[str, Any] = {}
         self.preprocessed_dataset: Optional[pd.DataFrame] = None
         self.preprocessing_report: Dict[str, Any] = {}
-    
-    def handle_message(self, message: Message):
-        """Traite les messages"""
 
+    def handle_message(self, message: Message):
         if message.message_type == MessageType.DATA_UPLOAD:
             self._handle_data_upload(message)
 
@@ -49,9 +39,8 @@ class DataEngineerAgent(BaseAgent):
                 self._handle_normalization(message)
             elif task == "split":
                 self._handle_split(message)
-    
+
     def _handle_data_upload(self, message: Message):
-        """Traite l'upload avec support multi-format"""
         file_data = message.content.get('file_data')
         filename = message.content.get('filename')
         
@@ -60,24 +49,18 @@ class DataEngineerAgent(BaseAgent):
             return
         
         try:
-            # Utiliser FileDetector pour charger automatiquement
             df, error = FileDetector.load_file(file_data, filename)
             
             if error:
                 self._send_error(message.sender, error)
                 return
-            
-            # Stocker le dataset
-            self.current_dataset = df
 
-            # Générer le profil automatique
+            self.current_dataset = df
             self.dataset_profile = DataProfiler.profile(df)
 
-            # NOUVEAU: Évaluer la qualité des données
             quality_report = DataQualityScorer.evaluate(df)
             self.dataset_profile['quality_report'] = quality_report
 
-            # Métadonnées de base
             self.dataset_metadata = {
                 'filename': filename,
                 'format': FileDetector.detect_format(filename),
@@ -89,10 +72,9 @@ class DataEngineerAgent(BaseAgent):
                 'quality_score': quality_report['overall_score'],
                 'quality_grade': quality_report['grade']
             }
-            
-            # Préparer le message de succès
+
             format_name = FileDetector.SUPPORTED_FORMATS.get(
-                self.dataset_metadata['format'], 
+                self.dataset_metadata['format'],
                 'Fichier'
             )
             
@@ -101,8 +83,7 @@ class DataEngineerAgent(BaseAgent):
                 f"Dimensions: {len(df)} lignes × {len(df.columns)} colonnes\n"
                 f"Type: {self.dataset_metadata['data_type']}"
             )
-            
-            # Ajouter les avertissements si nécessaire
+
             warnings = []
             if self.dataset_profile['missing_values']['total'] > 0:
                 warnings.append(
@@ -115,8 +96,7 @@ class DataEngineerAgent(BaseAgent):
             
             if warnings:
                 success_message += "\n\n" + "\n".join(warnings)
-            
-            # Envoyer la réponse avec dataset, metadata et profile
+
             self.message_bus.send_message(Message(
                 sender=self.name,
                 receiver=message.sender,
@@ -129,17 +109,15 @@ class DataEngineerAgent(BaseAgent):
                     'profile': self.dataset_profile
                 }
             ))
-            
+
         except Exception as e:
             self._send_error(message.sender, f"Erreur lors du chargement: {str(e)}")
-    
+
     def _handle_validation(self, message: Message):
-        """Valide la qualité des données actuelles"""
         if self.current_dataset is None:
             self._send_error(message.sender, "Aucun dataset chargé")
             return
-        
-        # Rapport de validation détaillé
+
         validation_report = {
             'valid': True,
             'metadata': self.dataset_metadata,
@@ -153,27 +131,23 @@ class DataEngineerAgent(BaseAgent):
             message_type=MessageType.TASK_RESPONSE,
             content=validation_report
         ))
-    
+
     def _calculate_quality_score(self) -> float:
-        """Calcule un score de qualité des données (0-100)"""
         if not self.dataset_profile:
             return 0.0
         
         score = 100.0
-        
-        # Pénalité pour valeurs manquantes
+
         missing_pct = self.dataset_profile['missing_values']['percentage']
         score -= min(missing_pct, 30)
-        
-        # Pénalité pour duplicatas
+
         if self.current_dataset is not None:
             dup_pct = (self.dataset_profile['duplicates'] / len(self.current_dataset)) * 100
             score -= min(dup_pct * 2, 20)
-        
+
         return max(0.0, score)
-    
+
     def _handle_hello(self, message: Message):
-        """Répond au message de test"""
         response = (
             "Agent Ingénieur Données opérationnel\n"
             f"Formats supportés: {FileDetector.get_supported_formats_string()}\n"
@@ -186,9 +160,8 @@ class DataEngineerAgent(BaseAgent):
             message_type=MessageType.TASK_RESPONSE,
             content={'message': response}
         ))
-    
+
     def _send_error(self, recipient: str, error_message: str):
-        """Envoie un message d'erreur"""
         self.message_bus.send_message(Message(
             sender=self.name,
             receiver=recipient,
@@ -196,16 +169,12 @@ class DataEngineerAgent(BaseAgent):
             content={'error': error_message}
         ))
 
-    # ==================== PREPROCESSING METHODS ====================
-
     def _handle_preprocessing(self, message: Message):
-        """Exécute le pipeline complet de preprocessing"""
         if self.current_dataset is None:
             self._send_error(message.sender, "Aucun dataset chargé")
             return
 
         try:
-            # Récupérer les paramètres
             target_col = message.content.get('target_col', None)
             clean = message.content.get('clean', True)
             encode = message.content.get('encode', True)
@@ -213,7 +182,6 @@ class DataEngineerAgent(BaseAgent):
             split = message.content.get('split', True)
             test_size = message.content.get('test_size', 0.2)
 
-            # Exécuter le pipeline complet
             result = DataPreprocessor.preprocess_pipeline(
                 self.current_dataset,
                 target_col=target_col,
@@ -224,14 +192,11 @@ class DataEngineerAgent(BaseAgent):
                 test_size=test_size
             )
 
-            # Stocker les résultats
             self.preprocessed_dataset = result['data_train']
             self.preprocessing_report = result['rapport']
 
-            # Construire le message de réponse
             response_message = self._build_preprocessing_summary(result)
 
-            # Envoyer la réponse
             self.message_bus.send_message(Message(
                 sender=self.name,
                 receiver=message.sender,
@@ -250,7 +215,6 @@ class DataEngineerAgent(BaseAgent):
             self._send_error(message.sender, f"Erreur lors du preprocessing: {str(e)}")
 
     def _handle_cleaning(self, message: Message):
-        """Exécute uniquement le nettoyage des données"""
         if self.current_dataset is None:
             self._send_error(message.sender, "Aucun dataset chargé")
             return
@@ -269,7 +233,6 @@ class DataEngineerAgent(BaseAgent):
 
             self.preprocessed_dataset = df_clean
 
-            # Construire le message de résumé
             summary = self._build_cleaning_summary(rapport)
 
             self.message_bus.send_message(Message(
@@ -289,7 +252,6 @@ class DataEngineerAgent(BaseAgent):
             self._send_error(message.sender, f"Erreur lors du nettoyage: {str(e)}")
 
     def _handle_encoding(self, message: Message):
-        """Exécute uniquement l'encodage des variables catégorielles"""
         if self.current_dataset is None:
             self._send_error(message.sender, "Aucun dataset chargé")
             return
@@ -306,7 +268,6 @@ class DataEngineerAgent(BaseAgent):
 
             self.preprocessed_dataset = df_encoded
 
-            # Construire le message de résumé
             summary = self._build_encoding_summary(rapport)
 
             self.message_bus.send_message(Message(
@@ -326,7 +287,6 @@ class DataEngineerAgent(BaseAgent):
             self._send_error(message.sender, f"Erreur lors de l'encodage: {str(e)}")
 
     def _handle_normalization(self, message: Message):
-        """Exécute uniquement la normalisation"""
         if self.current_dataset is None:
             self._send_error(message.sender, "Aucun dataset chargé")
             return
@@ -341,7 +301,6 @@ class DataEngineerAgent(BaseAgent):
 
             self.preprocessed_dataset = df_normalized
 
-            # Construire le message de résumé
             summary = self._build_normalization_summary(rapport)
 
             self.message_bus.send_message(Message(
@@ -361,7 +320,6 @@ class DataEngineerAgent(BaseAgent):
             self._send_error(message.sender, f"Erreur lors de la normalisation: {str(e)}")
 
     def _handle_split(self, message: Message):
-        """Exécute uniquement le train/test split"""
         if self.current_dataset is None:
             self._send_error(message.sender, "Aucun dataset chargé")
             return
@@ -380,7 +338,6 @@ class DataEngineerAgent(BaseAgent):
                 stratify=stratify
             )
 
-            # Construire le message de résumé
             summary = self._build_split_summary(rapport)
 
             self.message_bus.send_message(Message(
@@ -400,10 +357,7 @@ class DataEngineerAgent(BaseAgent):
         except Exception as e:
             self._send_error(message.sender, f"Erreur lors du split: {str(e)}")
 
-    # ==================== SUMMARY BUILDERS ====================
-
     def _build_preprocessing_summary(self, result: Dict[str, Any]) -> str:
-        """Construit un résumé lisible du preprocessing complet"""
         rapport = result['rapport']
         lines = ["=== PREPROCESSING COMPLET ===\n"]
 
@@ -411,7 +365,6 @@ class DataEngineerAgent(BaseAgent):
         steps = rapport.get('steps_executed', [])
         lines.append(f"Étapes exécutées: {', '.join(steps)}\n")
 
-        # Nettoyage
         if 'cleaning' in rapport and rapport['cleaning']:
             cleaning = rapport['cleaning']
             lines.append("\n[NETTOYAGE]")
@@ -424,14 +377,12 @@ class DataEngineerAgent(BaseAgent):
             if cleaning.get('outliers_removed', 0) > 0:
                 lines.append(f"- Outliers supprimés: {cleaning['outliers_removed']}")
 
-        # Encodage
         if 'encoding' in rapport and rapport['encoding']:
             encoding = rapport['encoding']
             lines.append("\n[ENCODAGE]")
             for col, method in encoding.items():
                 lines.append(f"- {col}: {method}")
 
-        # Normalisation
         if 'normalization' in rapport and rapport['normalization']:
             norm = rapport['normalization']
             cols = norm.get('columns_normalized', [])
@@ -439,7 +390,6 @@ class DataEngineerAgent(BaseAgent):
                 lines.append(f"\n[NORMALISATION]")
                 lines.append(f"- {len(cols)} colonnes normalisées ({norm.get('scaler_used', 'StandardScaler')})")
 
-        # Split
         if 'split' in rapport and rapport['split']:
             split_info = rapport['split']
             lines.append(f"\n[TRAIN/TEST SPLIT]")
@@ -451,7 +401,6 @@ class DataEngineerAgent(BaseAgent):
         return "\n".join(lines)
 
     def _build_cleaning_summary(self, rapport: Dict[str, Any]) -> str:
-        """Construit un résumé du nettoyage"""
         lines = ["=== NETTOYAGE DES DONNÉES ===\n"]
         lines.append(f"Lignes avant: {rapport.get('rows_before', 0):,}")
         lines.append(f"Lignes après: {rapport.get('rows_after', 0):,}")
@@ -470,7 +419,6 @@ class DataEngineerAgent(BaseAgent):
         return "\n".join(lines)
 
     def _build_encoding_summary(self, rapport: Dict[str, str]) -> str:
-        """Construit un résumé de l'encodage"""
         lines = ["=== ENCODAGE DES VARIABLES CATÉGORIELLES ===\n"]
 
         if not rapport:
@@ -483,7 +431,6 @@ class DataEngineerAgent(BaseAgent):
         return "\n".join(lines)
 
     def _build_normalization_summary(self, rapport: Dict[str, Any]) -> str:
-        """Construit un résumé de la normalisation"""
         lines = ["=== NORMALISATION DES FEATURES ===\n"]
 
         cols = rapport.get('columns_normalized', [])
@@ -498,7 +445,6 @@ class DataEngineerAgent(BaseAgent):
         return "\n".join(lines)
 
     def _build_split_summary(self, rapport: Dict[str, Any]) -> str:
-        """Construit un résumé du split"""
         lines = ["=== TRAIN/TEST SPLIT ===\n"]
         lines.append(f"Train: {rapport.get('train_size', 0):,} lignes ({(1-rapport.get('test_ratio', 0.2))*100:.0f}%)")
         lines.append(f"Test: {rapport.get('test_size', 0):,} lignes ({rapport.get('test_ratio', 0.2)*100:.0f}%)")

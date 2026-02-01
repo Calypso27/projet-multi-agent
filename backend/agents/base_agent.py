@@ -1,4 +1,4 @@
-"""Classe de base pour tous les agents"""
+"""Agent de base"""
 from abc import ABC, abstractmethod
 from typing import Optional, Any
 import threading
@@ -6,7 +6,6 @@ import time
 from ..models.message import Message, MessageType
 from ..communication.message_bus import get_message_bus
 
-# Import pour gérer le contexte Streamlit dans les threads
 try:
     from streamlit.runtime.scriptrunner import add_script_run_ctx
     STREAMLIT_AVAILABLE = True
@@ -15,8 +14,6 @@ except ImportError:
 
 
 class BaseAgent(ABC):
-    """Classe abstraite de base pour tous les agents"""
-    
     def __init__(self, name: str, role: str):
         self.name = name
         self.role = role
@@ -28,53 +25,45 @@ class BaseAgent(ABC):
         self.listener_thread: Optional[threading.Thread] = None
         
         print(f"Agent créé: {self.name} ({self.role})")
-    
+
     def start(self):
-        """Démarre l'agent"""
         if not self.is_running:
             self.is_running = True
             self.listener_thread = threading.Thread(target=self._listen_loop, daemon=True)
 
-            # Ajouter le contexte Streamlit au thread si disponible
             if STREAMLIT_AVAILABLE:
                 try:
                     add_script_run_ctx(self.listener_thread)
                 except Exception:
-                    # Si l'ajout du contexte échoue, continuer sans
                     pass
 
             self.listener_thread.start()
             print(f"Agent {self.name} démarré")
-    
+
     def stop(self):
-        """Arrête l'agent"""
         self.is_running = False
         if self.listener_thread:
             self.listener_thread.join(timeout=2)
         print(f"Agent {self.name} arrêté")
-    
+
     def _listen_loop(self):
-        """Boucle d'écoute des messages"""
         while self.is_running:
             message = self.message_bus.receive_message(self.name, timeout=0.1)
             if message:
                 try:
                     self.handle_message(message)
                 except Exception as e:
-                    # Ignorer les erreurs liées au ScriptRunContext manquant
                     error_str = str(e)
                     if "ScriptRunContext" not in error_str:
                         print(f"Erreur dans {self.name}: {e}")
             time.sleep(0.05)
-    
+
     @abstractmethod
     def handle_message(self, message: Message):
-        """Traite un message reçu (à implémenter par chaque agent)"""
         pass
-    
-    def send_message(self, receiver: str, message_type: MessageType, 
+
+    def send_message(self, receiver: str, message_type: MessageType,
                     content: Any, conversation_id: Optional[str] = None) -> bool:
-        """Envoie un message"""
         message = Message(
             sender=self.name,
             receiver=receiver,

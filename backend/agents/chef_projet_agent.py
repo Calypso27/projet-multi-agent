@@ -1,21 +1,17 @@
-"""Agent Chef de Projet - Version debug"""
+"""Agent Chef de Projet"""
 from typing import Dict, Any
 from ..models.message import Message, MessageType
 from .base_agent import BaseAgent
 
 
 class ChefProjetAgent(BaseAgent):
-    """Agent Chef de Projet - Orchestrateur"""
-    
     def __init__(self):
         super().__init__(name="ChefProjet", role="Orchestrateur")
         self.current_dataset = None
         self.dataset_metadata = None
         self.dataset_profile = None
-    
+
     def handle_message(self, message: Message):
-        """Traite les messages reçus"""
-        
         if message.message_type == MessageType.DATA_UPLOAD:
             self._handle_data_upload(message)
         
@@ -30,38 +26,30 @@ class ChefProjetAgent(BaseAgent):
         
         elif message.message_type == MessageType.ERROR:
             self._handle_error(message)
-    
+
     def _handle_data_upload(self, message: Message):
-        """Redirige l'upload vers l'Ingénieur Données"""
         self.message_bus.send_message(Message(
             sender=self.name,
             receiver="DataEngineer",
             message_type=MessageType.DATA_UPLOAD,
             content=message.content
         ))
-    
+
     def _handle_data_validation(self, message: Message):
-        """Reçoit la validation de l'Ingénieur et stocke le dataset"""
         if message.content.get('valid'):
-            # Stocker localement dans l'agent
             self.current_dataset = message.content.get('dataset')
             self.dataset_metadata = message.content.get('metadata')
             self.dataset_profile = message.content.get('profile')
 
-            # Transférer au Frontend qui se chargera de mettre à jour session_state
-            # depuis le contexte principal Streamlit
             self.message_bus.send_message(Message(
                 sender=self.name,
                 receiver="Frontend",
                 message_type=MessageType.DATA_VALIDATION,
                 content=message.content
             ))
-    
-    def _handle_user_request(self, message: Message):
-        """Traite une requête utilisateur"""
-        user_message = message.content.get('message', '').lower()
 
-        # Récupérer le dataset depuis le message (envoyé par Frontend)
+    def _handle_user_request(self, message: Message):
+        user_message = message.content.get('message', '').lower()
         dataset = message.content.get('dataset')
 
         if 'eda_complet' in user_message or 'eda complet' in user_message:
@@ -78,9 +66,8 @@ class ChefProjetAgent(BaseAgent):
             self._request_training(dataset, target, problem_type)
         else:
             self._send_to_frontend("Commande non reconnue. Utilisez l'interface graphique.")
-    
+
     def _request_eda_complet(self, dataset=None):
-        """Demande un EDA complet et minutieux"""
         if dataset is None:
             self._send_error_to_frontend("Aucune donnée chargée")
             return
@@ -93,7 +80,6 @@ class ChefProjetAgent(BaseAgent):
         ))
 
     def _request_analysis(self, dataset=None):
-        """Demande une analyse complète"""
         if dataset is None:
             self._send_error_to_frontend("Aucune donnée chargée")
             return
@@ -104,9 +90,8 @@ class ChefProjetAgent(BaseAgent):
             message_type=MessageType.TASK_REQUEST,
             content={'task': 'analyse_complete', 'dataset': dataset}
         ))
-    
+
     def _request_statistics(self, dataset=None):
-        """Demande des statistiques"""
         if dataset is None:
             self._send_error_to_frontend("Aucune donnée chargée")
             return
@@ -117,9 +102,8 @@ class ChefProjetAgent(BaseAgent):
             message_type=MessageType.TASK_REQUEST,
             content={'task': 'statistiques', 'dataset': dataset}
         ))
-    
+
     def _request_summary(self, dataset=None):
-        """Demande un résumé"""
         if dataset is None:
             self._send_error_to_frontend("Aucune donnée chargée")
             return
@@ -130,9 +114,8 @@ class ChefProjetAgent(BaseAgent):
             message_type=MessageType.TASK_REQUEST,
             content={'task': 'resume', 'dataset': dataset}
         ))
-    
+
     def _request_training(self, dataset=None, target=None, problem_type='auto'):
-        """Demande un entraînement ML"""
         if dataset is None:
             self._send_error_to_frontend("Aucune donnée chargée")
             return
@@ -147,23 +130,18 @@ class ChefProjetAgent(BaseAgent):
             message_type=MessageType.TASK_REQUEST,
             content={'task': 'entrainer', 'dataset': dataset, 'target': target, 'problem_type': problem_type}
         ))
-    
+
     def _forward_response(self, message: Message):
-        """Transfère une réponse au Frontend"""
-        # Extraire le résultat de la tâche et le formater pour le Frontend
         task = message.content.get('task', '')
         result = message.content.get('result', '')
         heatmap = message.content.get('heatmap', None)
         visualizations = message.content.get('visualizations', None)
 
-        # Le Frontend s'attend à recevoir {'message': '...'}
         content = {'message': result, 'task': task}
 
-        # Ajouter le heatmap s'il existe
         if heatmap:
             content['heatmap'] = heatmap
 
-        # Ajouter les visualisations s'il existe
         if visualizations:
             content['visualizations'] = visualizations
 
@@ -173,27 +151,24 @@ class ChefProjetAgent(BaseAgent):
             message_type=MessageType.AGENT_RESPONSE,
             content=content
         ))
-    
+
     def _handle_error(self, message: Message):
-        """Gère une erreur"""
         self.message_bus.send_message(Message(
             sender=self.name,
             receiver="Frontend",
             message_type=MessageType.ERROR,
             content=message.content
         ))
-    
+
     def _send_to_frontend(self, text: str):
-        """Envoie un message au Frontend"""
         self.message_bus.send_message(Message(
             sender=self.name,
             receiver="Frontend",
             message_type=MessageType.AGENT_RESPONSE,
             content={'message': text}
         ))
-    
+
     def _send_error_to_frontend(self, error: str):
-        """Envoie une erreur au Frontend"""
         self.message_bus.send_message(Message(
             sender=self.name,
             receiver="Frontend",

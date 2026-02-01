@@ -1,4 +1,4 @@
-"""Page Deploy - Prédictions avec modèles sauvegardés"""
+"""Page de prediction"""
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,12 +7,9 @@ import io
 
 
 def render_deploy():
-    """Affiche la page de déploiement et prédictions"""
-
     st.markdown("# Prédiction")
     st.markdown("*Utilisez vos modèles pour faire des prédictions*")
 
-    # Charger la liste des modèles disponibles
     models = ModelManager.list_models()
 
     if not models:
@@ -27,11 +24,9 @@ def render_deploy():
 
     st.markdown("## Étape 1: Sélectionner un modèle")
 
-    # Afficher les modèles disponibles
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        # Créer un DataFrame pour afficher les modèles
         models_df = pd.DataFrame([{
             'Nom': m['name'],
             'Type': m['type'],
@@ -43,7 +38,6 @@ def render_deploy():
 
         st.dataframe(models_df, use_container_width=True, hide_index=True)
 
-        # Sélection du modèle
         model_options = [f"{m['name']} - {m['target']} ({m['created_at'][:10]})" for m in models]
         selected_idx = st.selectbox(
             "Choisir le modèle à utiliser:",
@@ -60,7 +54,6 @@ def render_deploy():
         st.markdown(f"**Variable cible:** {selected_model_info['target']}")
         st.markdown(f"**Nombre de features:** {selected_model_info['n_features']}")
 
-        # Afficher les métriques
         metrics = selected_model_info['metrics']
         st.markdown("**Performance:**")
         for key, value in metrics.items():
@@ -69,13 +62,11 @@ def render_deploy():
 
     st.markdown("---")
 
-    # Charger les métadonnées complètes du modèle pour avoir les features
     model, metadata = ModelManager.load_model(selected_model_info['id'])
     feature_names = metadata.get('feature_names', [])
 
     st.markdown("## Étape 2: Entrer les données")
 
-    # Choix du mode de saisie
     input_mode = st.radio(
         "Mode de saisie:",
         ["Formulaire (prédiction unique)", "Fichier (prédictions multiples)"],
@@ -101,13 +92,9 @@ def render_deploy():
         if st.button(button_label, type="primary", use_container_width=True):
             with st.spinner("Génération des prédictions en cours..."):
                 try:
-                    # Préparer les données
                     X_pred = _prepare_prediction_data(new_data, metadata)
-
-                    # Faire les prédictions
                     predictions = model.predict(X_pred)
 
-                    # Marquer l'étape 4 du workflow comme complétée
                     if 'workflow' in st.session_state:
                         st.session_state.workflow['step_4_model_deployed'] = True
 
@@ -128,11 +115,8 @@ def render_deploy():
 
 
 def _render_prediction_form(metadata: dict) -> pd.DataFrame:
-    """Génère un formulaire dynamique basé sur les features du modèle"""
-
     st.markdown("### Remplissez les informations")
 
-    # Récupérer le dataset original pour avoir les valeurs possibles
     dataset = st.session_state.get('shared_dataset')
     feature_names = metadata.get('feature_names', [])
     target_column = metadata.get('target_column', '')
@@ -141,28 +125,22 @@ def _render_prediction_form(metadata: dict) -> pd.DataFrame:
         st.warning("Dataset original non disponible. Les valeurs par défaut seront utilisées.")
         dataset = pd.DataFrame()
 
-    # Créer un dictionnaire pour stocker les valeurs du formulaire
     form_values = {}
 
-    # Identifier les colonnes originales (avant one-hot encoding)
-    # Les features après encoding ont le format "colonne_valeur"
     original_columns = set()
     for feat in feature_names:
         if '_' in feat:
-            # C'est probablement une colonne encodée
             parts = feat.rsplit('_', 1)
             if len(parts) == 2:
                 original_columns.add(parts[0])
         else:
             original_columns.add(feat)
 
-    # Utiliser les colonnes du dataset original si disponible
     if not dataset.empty:
         columns_to_use = [col for col in dataset.columns if col != target_column]
     else:
         columns_to_use = list(original_columns)
 
-    # Organiser en colonnes pour un meilleur affichage
     n_cols = 2
     cols = st.columns(n_cols)
 
@@ -171,9 +149,7 @@ def _render_prediction_form(metadata: dict) -> pd.DataFrame:
             if not dataset.empty and col_name in dataset.columns:
                 col_data = dataset[col_name]
 
-                # Déterminer le type de champ en fonction du type de données
                 if pd.api.types.is_numeric_dtype(col_data):
-                    # Champ numérique
                     min_val = float(col_data.min())
                     max_val = float(col_data.max())
                     mean_val = float(col_data.mean())
@@ -197,7 +173,6 @@ def _render_prediction_form(metadata: dict) -> pd.DataFrame:
                         )
 
                 elif pd.api.types.is_categorical_dtype(col_data) or col_data.dtype == 'object':
-                    # Champ catégoriel - liste déroulante
                     unique_values = col_data.dropna().unique().tolist()
                     form_values[col_name] = st.selectbox(
                         f"**{col_name}**",
@@ -206,30 +181,22 @@ def _render_prediction_form(metadata: dict) -> pd.DataFrame:
                     )
 
                 elif pd.api.types.is_bool_dtype(col_data):
-                    # Champ booléen
                     form_values[col_name] = st.checkbox(f"**{col_name}**", value=False)
 
                 else:
-                    # Par défaut, champ texte
                     form_values[col_name] = st.text_input(f"**{col_name}**", value="")
 
             else:
-                # Colonne pas dans le dataset, champ texte par défaut
                 form_values[col_name] = st.text_input(f"**{col_name}**", value="")
 
-    # Afficher un résumé des valeurs saisies
     with st.expander("Résumé des valeurs saisies"):
         summary_df = pd.DataFrame([form_values])
         st.dataframe(summary_df, use_container_width=True)
 
-    # Retourner comme DataFrame
     return pd.DataFrame([form_values])
 
 
 def _render_file_upload(selected_model_info: dict) -> pd.DataFrame:
-    """Gère l'upload de fichier pour prédictions multiples"""
-
-    # Choix de la source
     data_source = st.radio(
         "Source des données:",
         ["Utiliser le dataset actuel", "Uploader un nouveau fichier"],
@@ -283,19 +250,15 @@ def _render_file_upload(selected_model_info: dict) -> pd.DataFrame:
 
 
 def _display_single_prediction(prediction, metadata: dict):
-    """Affiche le résultat d'une prédiction unique de manière visuelle"""
-
     st.success("### Prédiction effectuée")
 
     target_column = metadata.get('target_column', 'Résultat')
     problem_type = metadata.get('problem_type', 'classification')
 
-    # Affichage principal
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
         if problem_type == 'classification':
-            # Pour la classification, afficher la classe prédite
             st.markdown(f"""
             <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white;">
                 <h3 style="margin: 0; color: white;">Prédiction pour</h3>
@@ -304,7 +267,6 @@ def _display_single_prediction(prediction, metadata: dict):
             </div>
             """, unsafe_allow_html=True)
         else:
-            # Pour la régression, afficher la valeur numérique
             st.markdown(f"""
             <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); border-radius: 15px; color: white;">
                 <h3 style="margin: 0; color: white;">Prédiction pour</h3>
@@ -315,7 +277,6 @@ def _display_single_prediction(prediction, metadata: dict):
 
     st.markdown("---")
 
-    # Informations supplémentaires
     st.markdown("### Informations sur le modèle utilisé")
 
     col1, col2, col3 = st.columns(3)
@@ -332,15 +293,11 @@ def _display_single_prediction(prediction, metadata: dict):
 
 
 def _display_multiple_predictions(new_data: pd.DataFrame, predictions, metadata: dict, selected_model_info: dict):
-    """Affiche les résultats de prédictions multiples"""
-
-    # Créer un DataFrame avec les résultats
     result_df = new_data.copy()
     result_df[f'Prediction_{metadata["target_column"]}'] = predictions
 
     st.success(f"Prédictions générées avec succès pour {len(predictions)} lignes!")
 
-    # Afficher les résultats
     st.markdown("### Résultats des prédictions")
 
     col1, col2, col3 = st.columns(3)
@@ -360,10 +317,8 @@ def _display_multiple_predictions(new_data: pd.DataFrame, predictions, metadata:
             most_common = Counter(predictions).most_common(1)[0][0]
             st.metric("Classe majoritaire", most_common)
 
-    # Tableau des résultats
     st.dataframe(result_df, use_container_width=True)
 
-    # Distribution des prédictions
     st.markdown("### Distribution des prédictions")
     if metadata['problem_type'] == 'classification':
         pred_counts = pd.Series(predictions).value_counts().sort_index()
@@ -371,7 +326,6 @@ def _display_multiple_predictions(new_data: pd.DataFrame, predictions, metadata:
     else:
         st.bar_chart(pd.Series(predictions).value_counts(bins=20).sort_index())
 
-    # Export
     st.markdown("### Exporter les résultats")
 
     col1, col2 = st.columns(2)
@@ -399,13 +353,11 @@ def _display_multiple_predictions(new_data: pd.DataFrame, predictions, metadata:
             use_container_width=True
         )
 
-    # Stocker dans session state
     st.session_state.last_predictions = result_df
     st.session_state.last_model_used = selected_model_info
 
 
 def _format_metrics(metrics: dict, problem_type: str) -> str:
-    """Formate les métriques pour affichage"""
     if problem_type == 'regression':
         r2 = metrics.get('R²', 0)
         return f"R² = {r2:.3f}"
@@ -415,28 +367,16 @@ def _format_metrics(metrics: dict, problem_type: str) -> str:
 
 
 def _prepare_prediction_data(df: pd.DataFrame, metadata: dict) -> np.ndarray:
-    """
-    Prépare les données de prédiction avec les mêmes transformations
-    que lors de l'entraînement
-    """
-    # Copie pour ne pas modifier l'original
     X = df.copy()
-
-    # 1. One-hot encoding
     X = pd.get_dummies(X, drop_first=True)
 
-    # 2. Gérer les colonnes manquantes ou en trop
     training_features = metadata.get('feature_names', [])
 
-    # Ajouter les colonnes manquantes avec des 0
     for feat in training_features:
         if feat not in X.columns:
             X[feat] = 0
 
-    # Garder seulement les colonnes d'entraînement dans le bon ordre
     X = X.reindex(columns=training_features, fill_value=0)
-
-    # 3. Gérer les valeurs manquantes
     X = X.fillna(X.median())
     X = X.fillna(0)
 

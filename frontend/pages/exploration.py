@@ -1,4 +1,4 @@
-"""Page d'exploration - Analyse des donnees"""
+"""Page d'exploration"""
 import streamlit as st
 import time
 import base64
@@ -7,8 +7,6 @@ from backend.utils.data_quality_scorer import DataQualityScorer
 
 
 def render_exploration():
-    """Page d'exploration des donnees"""
-
     if not st.session_state.dataset_loaded:
         st.warning("**Étape précédente requise**")
         st.info("Veuillez d'abord charger un fichier depuis la page d'accueil.")
@@ -18,14 +16,12 @@ def render_exploration():
             st.rerun()
         return
 
-    st.markdown("# Exploration des Données")
+    st.markdown("# Exploration")
     st.markdown("*Analysez la qualité et comprenez vos données*")
 
-    # Marquer l'étape 2 comme complétée
     if 'workflow' in st.session_state:
         st.session_state.workflow['step_2_data_explored'] = True
 
-    # Onglets
     tab1, tab2 = st.tabs(["Vue Générale", "Analyse EDA"])
 
     with tab1:
@@ -34,7 +30,6 @@ def render_exploration():
     with tab2:
         show_eda_complet_tab()
 
-    # Bouton pour passer à l'étape suivante
     st.markdown("---")
     st.markdown("### Étape suivante")
 
@@ -54,14 +49,11 @@ def render_exploration():
 
 
 def show_overview_tab():
-    """Onglet vue generale"""
-    
     st.markdown("### Informations du Dataset")
-    
+
     info = st.session_state.dataset_info
     profile = st.session_state.dataset_profile
-    
-    # Metriques principales
+
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Lignes", f"{info['rows']:,}")
@@ -70,8 +62,7 @@ def show_overview_tab():
     with col3:
         missing = profile['missing_values']['total']
         st.metric("Valeurs manquantes", f"{missing:,}")
-    
-    # Types de colonnes
+
     st.markdown("### Repartition des Types de Colonnes")
     col_types = profile['column_types']
     
@@ -82,8 +73,7 @@ def show_overview_tab():
         st.metric("Categorielles", col_types['categorical'])
     with col3:
         st.metric("Dates", col_types['datetime'])
-    
-    # Details des colonnes
+
     st.markdown("### Details des Colonnes")
     
     column_data = []
@@ -95,8 +85,7 @@ def show_overview_tab():
         })
     
     st.dataframe(column_data, use_container_width=True)
-    
-    # Qualite des donnees
+
     if profile['missing_values']['total'] > 0 or profile['duplicates'] > 0:
         st.markdown("### Qualite des Donnees")
         
@@ -108,21 +97,17 @@ def show_overview_tab():
 
 
 def show_quality_report_tab():
-    """Onglet Rapport de Qualité des Données"""
-
     st.markdown("## Rapport de Qualité des Données")
     st.markdown("Évaluation professionnelle selon les standards de l'industrie")
 
     profile = st.session_state.dataset_profile
 
-    # Vérifier si le rapport de qualité existe
     if 'quality_report' not in profile:
         st.info("Rapport de qualité non disponible. Rechargez le fichier pour générer le rapport.")
         return
 
     quality_report = profile['quality_report']
 
-    # Score global avec jauge visuelle
     st.markdown("### Score Global")
 
     col1, col2, col3 = st.columns([2, 1, 1])
@@ -131,7 +116,6 @@ def show_quality_report_tab():
         score = quality_report['overall_score']
         grade = quality_report['grade']
 
-        # Déterminer la couleur
         if score >= 90:
             color = "#28a745"  # Vert
         elif score >= 70:
@@ -139,9 +123,8 @@ def show_quality_report_tab():
         elif score >= 50:
             color = "#fd7e14"  # Orange
         else:
-            color = "#dc3545"  # Rouge
+            color = "#dc3545"
 
-        # Barre de progression personnalisée
         st.markdown(f"""
         <div style="background-color: #e0e0e0; border-radius: 10px; height: 40px; overflow: hidden;">
             <div style="background-color: {color}; width: {score}%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">
@@ -159,7 +142,6 @@ def show_quality_report_tab():
 
     st.markdown("---")
 
-    # Résumé exécutif
     st.markdown("### Résumé Exécutif")
 
     summary = quality_report['summary']
@@ -177,7 +159,6 @@ def show_quality_report_tab():
 
     st.markdown("---")
 
-    # Évaluation par dimension
     st.markdown("### Évaluation par Dimension")
 
     dimensions = quality_report['dimensions']
@@ -196,7 +177,6 @@ def show_quality_report_tab():
         with st.expander(f"{name} - {dim['score']}/100 ({dim['status'].upper()})", expanded=(dim['status'] in ['fair', 'poor'])):
             st.markdown(f"**Description:** {description}")
 
-            # Score
             score_color = "#28a745" if dim['status'] == 'excellent' else \
                          "#ffc107" if dim['status'] == 'good' else \
                          "#fd7e14" if dim['status'] == 'fair' else "#dc3545"
@@ -207,12 +187,10 @@ def show_quality_report_tab():
             </div>
             """, unsafe_allow_html=True)
 
-            # Détails spécifiques
             if key == 'completeness':
                 if dim['columns_with_missing'] > 0:
                     st.warning(f" {dim['columns_with_missing']} colonnes avec valeurs manquantes ({dim['missing_cells']:,} cellules)")
 
-                    # Top 5 des colonnes avec le plus de manquants
                     if dim['details']:
                         st.markdown("**Top 5 colonnes affectées:**")
                         sorted_missing = sorted(dim['details'].items(), key=lambda x: x[1]['percentage'], reverse=True)[:5]
@@ -222,7 +200,7 @@ def show_quality_report_tab():
             elif key == 'validity':
                 if dim['issues']:
                     st.error(f"{len(dim['issues'])} problèmes de validité détectés")
-                    for issue in dim['issues'][:5]:  # Top 5
+                    for issue in dim['issues'][:5]:
                         st.markdown(f"- **{issue['column']}**: {issue['issue']} ({issue['count']} occurrences)")
 
             elif key == 'consistency':
@@ -247,11 +225,9 @@ def show_quality_report_tab():
 
     st.markdown("---")
 
-    # Recommandations
     st.markdown("### Recommandations")
 
     for rec in quality_report['recommendations']:
-        # Déterminer le type d'alerte
         if "CRITIQUE" in rec.upper() or "CRITICAL" in rec.upper():
             st.error(rec)
         elif "ATTENTION" in rec.upper() or "WARNING" in rec.upper():
@@ -261,13 +237,11 @@ def show_quality_report_tab():
 
     st.markdown("---")
 
-    # Export du rapport
     st.markdown("### Export du Rapport")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        # Formater en markdown
         markdown_report = DataQualityScorer.format_report(quality_report)
 
         st.download_button(
@@ -279,11 +253,9 @@ def show_quality_report_tab():
         )
 
     with col2:
-        # Export JSON pour analyse programmatique
         import json
         import numpy as np
 
-        # Fonction pour convertir les types numpy en types Python natifs
         def convert_numpy_types(obj):
             if isinstance(obj, (np.integer, np.int32, np.int64)):
                 return int(obj)
@@ -312,8 +284,6 @@ def show_quality_report_tab():
 
 
 def show_eda_complet_tab():
-    """Onglet EDA Complet - Analyse exploratoire approfondie"""
-
     st.markdown("### Analyse Exploratoire des Donnees (EDA)")
 
     st.info("""
@@ -331,39 +301,33 @@ def show_eda_complet_tab():
 
     st.markdown("---")
 
-    # Afficher le rapport EDA stocké
     if 'eda_report' in st.session_state and st.session_state.eda_report:
         st.markdown(st.session_state.eda_report)
 
-        # Afficher les visualisations stockées
         if 'eda_visualizations' in st.session_state and st.session_state.eda_visualizations:
             visualizations = st.session_state.eda_visualizations
 
             st.markdown("---")
             st.markdown("## VISUALISATIONS")
 
-            # Histogrammes
             if 'histogrammes' in visualizations:
                 st.markdown("### Distributions des variables numeriques (Histogrammes)")
                 img_data = base64.b64decode(visualizations['histogrammes'])
                 st.image(img_data, use_column_width=True)
                 st.markdown("---")
 
-            # Boxplots
             if 'boxplots' in visualizations:
                 st.markdown("### Detection des outliers (Boxplots)")
                 img_data = base64.b64decode(visualizations['boxplots'])
                 st.image(img_data, use_column_width=True)
                 st.markdown("---")
 
-            # Barplots
             if 'barplots' in visualizations:
                 st.markdown("### Repartition des variables categorielles (Top valeurs)")
                 img_data = base64.b64decode(visualizations['barplots'])
                 st.image(img_data, use_column_width=True)
                 st.markdown("---")
 
-            # Heatmap de correlation
             if 'correlation_heatmap' in visualizations:
                 st.markdown("### Matrice de Correlation")
                 img_data = base64.b64decode(visualizations['correlation_heatmap'])
@@ -372,17 +336,14 @@ def show_eda_complet_tab():
 
         st.markdown("---")
 
-    # Bouton pour lancer l'EDA
     if st.button("Lancer l'EDA Complet", type="primary"):
         with st.spinner("Analyse en cours... Cela peut prendre quelques instants pour les gros datasets..."):
-            # Récupérer le dataset
             dataset = st.session_state.get('shared_dataset')
 
             if dataset is None:
                 st.error("Aucun dataset charge. Veuillez d'abord charger un fichier.")
                 return
 
-            # Demander l'EDA complet
             st.session_state.bus.send_message(Message(
                 sender="Frontend",
                 receiver="ChefProjet",
@@ -390,7 +351,7 @@ def show_eda_complet_tab():
                 content={'message': 'eda_complet', 'dataset': dataset}
             ))
 
-            response = wait_for_response(max_wait=60)  # Plus de temps pour l'EDA complet
+            response = wait_for_response(max_wait=60)
 
             if response:
                 if response.message_type == MessageType.AGENT_RESPONSE:
@@ -411,7 +372,6 @@ def show_eda_complet_tab():
 
 
 def wait_for_response(max_wait=15):
-    """Attend une reponse de l'agent"""
     for _ in range(max_wait * 2):
         time.sleep(0.5)
         response = st.session_state.bus.receive_message("Frontend")
