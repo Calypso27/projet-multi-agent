@@ -21,7 +21,7 @@ except ImportError:
 _anthropic_client = None
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
-_OLLAMA_BASE_URL   = "http://localhost:11434"
+_OLLAMA_BASE_URL      = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 _OLLAMA_DEFAULT_MODEL = "llama3.2:latest"   # modèle utilisé par défaut
 
 
