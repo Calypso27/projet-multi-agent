@@ -1,27 +1,153 @@
-version: '3.8'
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Plateforme ML Multi-Agent — Stack complète
+#
+# Services :
+#   ollama  — LLM local (gemma3:4b), port 11434
+#   app     — Streamlit + agents, port 8501 (interne)
+#   nginx   — Reverse proxy public, port 80 / 443
+#
+# Démarrage :
+#   docker compose up -d
+#
+# Premier démarrage (téléchargement du modèle ~2.5 Go) :
+#   docker compose up -d ollama
+#   docker compose exec ollama ollama pull gemma3:4b
+#   docker compose up -d
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
+
+  # ── Ollama — serveur LLM local ─────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: dataagent-ollama
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - ollama_data:/root/.ollama        # modèles persistés entre redémarrages
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h            # garde le modèle chargé en mémoire
+      - OLLAMA_NUM_PARALLEL=2            # requêtes parallèles max
+    ports:
+      - "11434:11434"                    # exposé pour debug local uniquement
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 6G                     # ajuster selon GPU/RAM disponible
+        reservations:
+          memory: 2G
+
+  # ── Ollama init — pull le modèle au premier démarrage ─────────────────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: dataagent-ollama-init
+    networks:
+      - internal
+    volumes:
+      - ollama_data:/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: >
+      /bin/sh -c "
+        echo 'Vérification du modèle gemma3:4b...' &&
+        ollama pull gemma3:4b &&
+        echo 'Modèle prêt.'
+      "
+    restart: "no"                        # s'exécute une seule fois
+
+  # ── Application Streamlit ──────────────────────────────────────────────────
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: plateforme-analyse-donnees
-    ports:
-      - "8501:8501"
-    volumes:
-      # Persister les modèles sauvegardés
-      - ./saved_models:/app/saved_models
-    environment:
-      - STREAMLIT_SERVER_PORT=8501
-      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
-      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      target: runtime
+    container_name: dataagent-app
     restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - saved_models:/app/saved_models   # modèles ML persistés
+      - uploads_tmp:/tmp/uploads         # fichiers uploadés temporaires
+    env_file:
+      - .env.example                     # remplacer par .env en production
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
+    depends_on:
+      ollama:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+        reservations:
+          memory: 1G
+          cpus: "0.5"
 
+  # ── Nginx — reverse proxy + SSL ───────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: dataagent-nginx
+    restart: unless-stopped
+    networks:
+      - internal
+      - external
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro        # certificats SSL (Let's Encrypt)
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+# ─── Volumes persistants ──────────────────────────────────────────────────────
 volumes:
+  ollama_data:
+    driver: local
+    name: dataagent_ollama_models
   saved_models:
+    driver: local
+    name: dataagent_saved_models
+  uploads_tmp:
+    driver: local
+    name: dataagent_uploads
+  nginx_logs:
+    driver: local
+    name: dataagent_nginx_logs
+
+# ─── Réseaux ─────────────────────────────────────────────────────────────────
+networks:
+  internal:
+    name: dataagent_internal
+    driver: bridge
+    internal: true           # isolé d'internet — pas d'accès direct
+  external:
+    name: dataagent_external
+    driver: bridge            # seul nginx est exposé sur ce réseau

@@ -58,3 +58,10 @@ temp/
 Dockerfile
 docker-compose*.yml
 .dockerignore
+
+# Saved models (mounted as Docker volume at runtime)
+saved_models/
+frontend/saved_models/
+
+# Nginx config (bind-mounted, not baked in)
+nginx/
