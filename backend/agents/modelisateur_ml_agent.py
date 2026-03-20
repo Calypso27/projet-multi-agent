@@ -7,8 +7,10 @@ from .base_agent import BaseAgent
 from ..models.model_manager import ModelManager
 from ..utils.llm_client import call_llm, is_available
 
+from collections import Counter
+
 try:
-    from sklearn.model_selection import train_test_split
+    from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, KFold
     from sklearn.preprocessing import StandardScaler, LabelEncoder
     from sklearn.linear_model import LinearRegression, LogisticRegression
     from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor, GradientBoostingClassifier
@@ -123,7 +125,7 @@ class ModelisateurMLAgent(BaseAgent):
 
             print("[ModelisateurML] Entraînement des modèles...")
             results = self._train_multiple_models_robust(
-                X_train, X_test, y_train, y_test,
+                X, y, X_train, X_test, y_train, y_test,
                 problem_type, feature_names
             )
             print(f"[ModelisateurML] Entraînement terminé: {len(results)} modèles")
@@ -213,9 +215,34 @@ class ModelisateurMLAgent(BaseAgent):
         feature_names = X.columns.tolist()
         return X.values, y, feature_names
 
-    def _train_multiple_models_robust(self, X_train, X_test, y_train, y_test, problem_type, feature_names):
+    def _train_multiple_models_robust(self, X_full, y_full, X_train, X_test, y_train, y_test, problem_type, feature_names):
         results = []
 
+        # ── Détection du déséquilibre de classes ──────────────────────────────
+        is_imbalanced = False
+        cv_scoring = 'r2' if problem_type == 'regression' else 'accuracy'
+
+        if problem_type == 'classification':
+            class_counts = Counter(y_full.tolist())
+            min_ratio = min(class_counts.values()) / len(y_full)
+            if min_ratio < 0.2:
+                is_imbalanced = True
+                cv_scoring = 'f1_weighted'
+                print(f"[ModelisateurML] Déséquilibre détecté (classe min: {min_ratio:.1%}) → F1-weighted")
+
+        # ── Cross-validation k=5 ──────────────────────────────────────────────
+        n_splits = 5
+        if problem_type == 'classification':
+            n_classes = len(np.unique(y_full))
+            n_splits = min(5, min(Counter(y_full.tolist()).values()))
+            n_splits = max(2, n_splits)
+            cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+        else:
+            cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+        print(f"[ModelisateurML] Cross-validation {n_splits}-fold, métrique: {cv_scoring}")
+
+        # ── Définition des modèles ─────────────────────────────────────────────
         if problem_type == "regression":
             models = {
                 'Régression Linéaire': LinearRegression(),
@@ -234,24 +261,30 @@ class ModelisateurMLAgent(BaseAgent):
 
         for name, model in models.items():
             try:
+                # 1. Score CV sur données complètes → critère de sélection
+                cv_scores = cross_val_score(
+                    model, X_full, y_full, cv=cv, scoring=cv_scoring, n_jobs=1
+                )
+                cv_mean = float(cv_scores.mean())
+                cv_std  = float(cv_scores.std())
+                print(f"[ModelisateurML] {name} — CV {cv_scoring}: {cv_mean:.4f} ±{cv_std:.4f}")
+
+                # 2. Entraînement sur train set → métriques détaillées sur test set
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
 
                 if problem_type == "regression":
-                    r2 = r2_score(y_test, y_pred)
+                    r2   = r2_score(y_test, y_pred)
                     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                    mae = mean_absolute_error(y_test, y_pred)
-                    score = r2
+                    mae  = mean_absolute_error(y_test, y_pred)
                     metrics = {'R²': round(r2, 4), 'RMSE': round(rmse, 4), 'MAE': round(mae, 4)}
                 else:
                     accuracy = accuracy_score(y_test, y_pred)
-                    score = accuracy
-                    metrics = {'Accuracy': round(accuracy, 4)}
-                    
+                    metrics  = {'Accuracy': round(accuracy, 4)}
                     if len(np.unique(y_train)) == 2:
                         metrics['Precision'] = round(precision_score(y_test, y_pred, average='binary'), 4)
-                        metrics['Recall'] = round(recall_score(y_test, y_pred, average='binary'), 4)
-                        metrics['F1-Score'] = round(f1_score(y_test, y_pred, average='binary'), 4)
+                        metrics['Recall']    = round(recall_score(y_test, y_pred, average='binary'), 4)
+                        metrics['F1-Score']  = round(f1_score(y_test, y_pred, average='binary'), 4)
 
                 importance = None
                 if hasattr(model, 'feature_importances_'):
@@ -261,17 +294,20 @@ class ModelisateurMLAgent(BaseAgent):
                     if len(coefs.shape) > 1:
                         coefs = coefs[0]
                     importance = dict(zip(feature_names, np.abs(coefs).flatten()))
-                
+
                 results.append({
                     'name': name,
-                    'score': score,
+                    'score': cv_mean,           # score CV = critère de classement
+                    'cv_std': round(cv_std, 4),
+                    'cv_metric': cv_scoring,
                     'metrics': metrics,
                     'feature_importance': importance,
+                    'is_imbalanced': is_imbalanced,
                     'error': None
                 })
 
-                if score > best_score:
-                    best_score = score
+                if cv_mean > best_score:
+                    best_score     = cv_mean
                     best_model_name = name
                     self.best_model = model
                     self.feature_importance = importance
@@ -280,8 +316,11 @@ class ModelisateurMLAgent(BaseAgent):
                 results.append({
                     'name': name,
                     'score': -1,
+                    'cv_std': None,
+                    'cv_metric': cv_scoring,
                     'metrics': {},
                     'feature_importance': None,
+                    'is_imbalanced': is_imbalanced,
                     'error': str(e)
                 })
 
@@ -296,39 +335,56 @@ class ModelisateurMLAgent(BaseAgent):
     def _format_training_results(self, results, problem_type, target):
         output = f"# Résultats de l'Entraînement\n\n"
         output += f"**Variable cible:** {target}\n"
-        output += f"**Type:** {'Régression' if problem_type == 'regression' else 'Classification'}\n\n"
+        output += f"**Type:** {'Régression' if problem_type == 'regression' else 'Classification'}\n"
+
+        # Infos sur la stratégie d'évaluation
+        if results:
+            cv_metric = results[0].get('cv_metric', '')
+            is_imbalanced = results[0].get('is_imbalanced', False)
+            if is_imbalanced:
+                output += f"**Données déséquilibrées détectées** → sélection par **F1-weighted** (cross-validation 5-fold)\n\n"
+            else:
+                label = 'R² (CV 5-fold)' if problem_type == 'regression' else 'Accuracy (CV 5-fold)'
+                output += f"**Critère de sélection :** {label}\n\n"
 
         output += "## Comparaison des Modèles\n\n"
 
         if problem_type == "regression":
-            output += "| Modèle | R² | RMSE | MAE | Statut |\n"
-            output += "|--------|-----|------|-----|--------|\n"
+            output += "| Modèle | CV R² moyen | ±Écart-type | R² test | RMSE | MAE | Statut |\n"
+            output += "|--------|-------------|-------------|---------|------|-----|--------|\n"
             for r in results:
                 status = "✓ Meilleur" if r.get('is_best') else "✓"
-                if r['score'] == -1: status = "✗ Erreur"
-                output += f"| {r['name']} | {r['metrics'].get('R²', '-')} | {r['metrics'].get('RMSE', '-')} | {r['metrics'].get('MAE', '-')} | {status} |\n"
+                if r['score'] == -1:
+                    status = "✗ Erreur"
+                cv_mean = f"{r['score']:.4f}" if r['score'] != -1 else '-'
+                cv_std  = f"{r['cv_std']:.4f}" if r.get('cv_std') is not None else '-'
+                output += (f"| {r['name']} | {cv_mean} | {cv_std} | "
+                           f"{r['metrics'].get('R²', '-')} | {r['metrics'].get('RMSE', '-')} | "
+                           f"{r['metrics'].get('MAE', '-')} | {status} |\n")
         else:
-            output += "| Modèle | Accuracy | Precision | Recall | F1-Score | Statut |\n"
-            output += "|--------|----------|-----------|--------|----------|--------|\n"
+            is_imbalanced = results[0].get('is_imbalanced', False) if results else False
+            cv_label = "CV F1-weighted" if is_imbalanced else "CV Accuracy"
+            output += f"| Modèle | {cv_label} moyen | ±Écart-type | Accuracy test | Precision | Recall | F1-Score | Statut |\n"
+            output += "|--------|----------------|-------------|---------------|-----------|--------|----------|--------|\n"
             for r in results:
                 status = "✓ Meilleur" if r.get('is_best') else "✓"
-                if r['score'] == -1: status = "✗ Erreur"
-
-                prec = r['metrics'].get('Precision', '-')
-                rec = r['metrics'].get('Recall', '-')
-                f1 = r['metrics'].get('F1-Score', '-')
-                acc = r['metrics'].get('Accuracy', '-')
-
-                output += f"| {r['name']} | {acc} | {prec} | {rec} | {f1} | {status} |\n"
+                if r['score'] == -1:
+                    status = "✗ Erreur"
+                cv_mean = f"{r['score']:.4f}" if r['score'] != -1 else '-'
+                cv_std  = f"{r['cv_std']:.4f}" if r.get('cv_std') is not None else '-'
+                output += (f"| {r['name']} | {cv_mean} | {cv_std} | "
+                           f"{r['metrics'].get('Accuracy', '-')} | {r['metrics'].get('Precision', '-')} | "
+                           f"{r['metrics'].get('Recall', '-')} | {r['metrics'].get('F1-Score', '-')} | {status} |\n")
 
         if results and results[0].get('is_best'):
             best = results[0]
             output += f"\n## Meilleur Modèle: {best['name']}\n\n"
+            output += f"**Score CV moyen :** {best['score']:.4f} ±{best.get('cv_std', 0):.4f}\n\n"
 
             if problem_type == "regression":
-                output += f"Le modèle peut expliquer **{best['metrics']['R²']*100:.1f}%** de la variance.\n"
+                output += f"Le modèle peut expliquer **{best['metrics']['R²']*100:.1f}%** de la variance sur le jeu de test.\n"
             else:
-                output += f"Précision de classification: **{best['metrics']['Accuracy']*100:.1f}%**\n"
+                output += f"Précision de classification (test) : **{best['metrics']['Accuracy']*100:.1f}%**\n"
 
             if best['feature_importance']:
                 output += "\n### Top 5 Variables Importantes\n\n"
@@ -360,7 +416,6 @@ class ModelisateurMLAgent(BaseAgent):
                     explanation = call_llm(
                         prompt=prompt,
                         system="Tu es un expert ML pédagogue. Traduis les métriques en langage métier clair.",
-                        model="claude-sonnet-4-6"
                     )
                     if explanation:
                         output += f"\n### Interprétation par l'IA\n\n{explanation}\n"
