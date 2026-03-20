@@ -1,2 +1,10 @@
 env/
 ENV/
+.env
+*.env
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.venv/
+saved_models/
+frontend/saved_models/

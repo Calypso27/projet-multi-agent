@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, List
 from ..models.message import Message, MessageType
 from .base_agent import BaseAgent
 from ..models.model_manager import ModelManager
+from ..utils.llm_client import call_llm, is_available
 
 try:
     from sklearn.model_selection import train_test_split
@@ -137,7 +138,6 @@ class ModelisateurMLAgent(BaseAgent):
 
             model_id = None
             if self.best_model is not None:
-                print("[ModelisateurML] Sauvegarde du meilleur modèle...")
                 try:
                     model_id = ModelManager.save_model(
                         model=self.best_model,
@@ -150,16 +150,14 @@ class ModelisateurMLAgent(BaseAgent):
                             'preprocessing': {
                                 'one_hot_encoding': True,
                                 'missing_value_strategy': 'median',
+                                'high_cardinality_threshold': 20,
                                 'test_size': 0.2,
                                 'random_state': 42
                             }
                         }
                     )
-                    print(f"[ModelisateurML] Modèle sauvegardé avec succès: {model_id}")
                 except Exception as e:
-                    print(f"[ModelisateurML] ERREUR lors de la sauvegarde du modèle: {str(e)}")
-            else:
-                print("[ModelisateurML] Aucun modèle à sauvegarder (best_model est None)")
+                    print(f"[ModelisateurML] ERREUR sauvegarde: {e}")
 
             print(f"[ModelisateurML] Envoi de la réponse à {message.sender}...")
             self.message_bus.send_message(Message(
@@ -197,15 +195,23 @@ class ModelisateurMLAgent(BaseAgent):
             le = LabelEncoder()
             y = le.fit_transform(y)
 
+        # Supprimer les colonnes texte à haute cardinalité (identifiants, noms, etc.)
+        # avant le one-hot encoding pour éviter l'explosion du nombre de features
+        cat_cols = X.select_dtypes(include=['object']).columns
+        high_card = [c for c in cat_cols if X[c].nunique() > 20]
+        if high_card:
+            print(f"[ModelisateurML] Colonnes haute cardinalité ignorées: {high_card}")
+            X = X.drop(columns=high_card)
+
         X = pd.get_dummies(X, drop_first=True)
         X = X.fillna(X.median())
 
-        mask = ~y.isna()
+        mask = ~pd.Series(y).isna().values
         X = X[mask]
-        y = y[mask]
+        y = np.array(y)[mask]
 
         feature_names = X.columns.tolist()
-        return X.values, y.values, feature_names
+        return X.values, y, feature_names
 
     def _train_multiple_models_robust(self, X_train, X_test, y_train, y_test, problem_type, feature_names):
         results = []
@@ -291,9 +297,9 @@ class ModelisateurMLAgent(BaseAgent):
         output = f"# Résultats de l'Entraînement\n\n"
         output += f"**Variable cible:** {target}\n"
         output += f"**Type:** {'Régression' if problem_type == 'regression' else 'Classification'}\n\n"
-        
+
         output += "## Comparaison des Modèles\n\n"
-        
+
         if problem_type == "regression":
             output += "| Modèle | R² | RMSE | MAE | Statut |\n"
             output += "|--------|-----|------|-----|--------|\n"
@@ -312,7 +318,7 @@ class ModelisateurMLAgent(BaseAgent):
                 rec = r['metrics'].get('Recall', '-')
                 f1 = r['metrics'].get('F1-Score', '-')
                 acc = r['metrics'].get('Accuracy', '-')
-                
+
                 output += f"| {r['name']} | {acc} | {prec} | {rec} | {f1} | {status} |\n"
 
         if results and results[0].get('is_best'):
@@ -329,6 +335,38 @@ class ModelisateurMLAgent(BaseAgent):
                 sorted_feats = sorted(best['feature_importance'].items(), key=lambda x: x[1], reverse=True)[:5]
                 for f, val in sorted_feats:
                     output += f"- **{f}**: {val:.4f}\n"
+
+            # === LLM : explication du modèle en langage naturel ===
+            if is_available():
+                try:
+                    top_features = []
+                    if best['feature_importance']:
+                        top_features = sorted(
+                            best['feature_importance'].items(),
+                            key=lambda x: x[1], reverse=True
+                        )[:5]
+
+                    prompt = (
+                        f"Un modèle de Machine Learning vient d'être entraîné :\n"
+                        f"- Type de problème : {problem_type}\n"
+                        f"- Variable à prédire : {target}\n"
+                        f"- Meilleur algorithme : {best['name']}\n"
+                        f"- Métriques : {best['metrics']}\n"
+                        f"- Variables les plus importantes : {top_features}\n\n"
+                        f"Explique ces résultats en 4-5 phrases accessibles à un chef de projet "
+                        f"(non-expert ML). Dis si le modèle est bon ou non, pourquoi, "
+                        f"et ce que les variables importantes signifient concrètement."
+                    )
+                    explanation = call_llm(
+                        prompt=prompt,
+                        system="Tu es un expert ML pédagogue. Traduis les métriques en langage métier clair.",
+                        model="claude-sonnet-4-6"
+                    )
+                    if explanation:
+                        output += f"\n### Interprétation par l'IA\n\n{explanation}\n"
+                except Exception:
+                    pass  # LLM optionnel
+            # =======================================================
 
         return output
 

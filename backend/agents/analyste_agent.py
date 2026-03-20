@@ -6,6 +6,8 @@ import base64
 from typing import Dict, Any, Optional, List, Tuple
 from ..models.message import Message, MessageType
 from .base_agent import BaseAgent
+from ..utils.llm_client import call_llm, summarize_df_for_llm, is_available
+from ..utils.rag_engine import get_rag
 
 try:
     import matplotlib
@@ -617,6 +619,33 @@ class AnalysteAgent(BaseAgent):
         quality = "excellente" if missing_pct < 1 else "bonne" if missing_pct < 5 else "moyenne" if missing_pct < 15 else "faible"
         result += f"- **Qualité globale**: {quality.capitalize()} ({missing_pct:.2f}% de données manquantes)\n"
 
+        # === LLM : interprétation narrative du dataset ===
+        if is_available():
+            try:
+                rag = get_rag()
+                if rag.is_ready():
+                    rag_query = "analyse distribution corrélations anomalies vue globale colonnes statistiques"
+                    df_summary = "\n\n".join(rag.search(rag_query, k=7))
+                else:
+                    df_summary = summarize_df_for_llm(df)
+                narrative = call_llm(
+                    prompt=(
+                        f"Tu viens d'analyser ce dataset :\n\n{df_summary}\n\n"
+                        f"Écris un paragraphe d'analyse en français (5-7 phrases) qui explique :\n"
+                        f"1. La nature et le contexte probable de ces données\n"
+                        f"2. Les points forts de la qualité\n"
+                        f"3. Les risques ou anomalies à surveiller avant la modélisation\n"
+                        f"Sois précis, factuel et orienté data scientist."
+                    ),
+                    system="Tu es un analyste de données senior. Sois synthétique et actionnable.",
+                    model="claude-sonnet-4-6"
+                )
+                if narrative:
+                    result += f"\n### Analyse par l'IA\n\n{narrative}\n"
+            except Exception:
+                pass  # LLM optionnel
+        # =================================================
+
         result += "\n### Prochaines étapes suggérées\n\n"
         result += "1. **Nettoyage**: Traiter les valeurs manquantes et outliers identifiés\n"
         result += "2. **Feature Engineering**: Créer de nouvelles variables si pertinent\n"
@@ -625,7 +654,7 @@ class AnalysteAgent(BaseAgent):
         result += "5. **Modélisation**: Passer à la phase de Machine Learning\n"
 
         result += "\n---\n\n"
-        result += "*Rapport généré automatiquement par l'Agent Analyste EDA*\n"
+        result += "*Rapport généré par l'Agent Analyste EDA — enrichi par Claude AI*\n"
 
         return result
 

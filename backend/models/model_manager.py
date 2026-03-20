@@ -29,7 +29,9 @@ class ModelManager:
     @staticmethod
     def save_model(model: Any, metadata: Dict[str, Any]) -> str:
         """
-        Sauvegarde un modèle avec ses métadonnées
+        Sauvegarde un modèle avec ses métadonnées.
+        Si un modèle existant cible la même colonne avec le même type de problème,
+        il est remplacé (un seul modèle par combinaison cible/type).
 
         Args:
             model: Le modèle scikit-learn entraîné
@@ -46,10 +48,20 @@ class ModelManager:
         """
         ModelManager._ensure_dir()
 
-        # Créer un ID unique basé sur timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # Supprimer les anciens modèles pour la même (cible, type_de_problème)
+        target = metadata.get('target_column', '')
+        prob_type = metadata.get('problem_type', '')
+        existing = ModelManager.list_models()
+        for m in existing:
+            if m.get('target') == target and m.get('type') == prob_type:
+                ModelManager.delete_model(m['id'])
+                print(f"[ModelManager] Ancien modèle remplacé: {m['id']}")
+
+        # ID stable basé sur la cible et le type (pas le timestamp)
         model_name_clean = metadata.get('model_name', 'model').replace(' ', '_')
-        model_id = f"{model_name_clean}_{timestamp}"
+        target_clean = target.replace(' ', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        model_id = f"{model_name_clean}_{target_clean}_{prob_type}_{timestamp}"
 
         # Chemins de sauvegarde
         model_path = os.path.join(ModelManager.MODELS_DIR, f"{model_id}_model.pkl")

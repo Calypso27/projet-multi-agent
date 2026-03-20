@@ -8,6 +8,8 @@ from ..utils.file_detector import FileDetector
 from ..utils.data_profiler import DataProfiler
 from ..utils.data_preprocessor import DataPreprocessor
 from ..utils.data_quality_scorer import DataQualityScorer
+from ..utils.llm_client import call_llm, summarize_df_for_llm, is_available
+from ..utils.rag_engine import get_rag
 
 
 class DataEngineerAgent(BaseAgent):
@@ -58,6 +60,14 @@ class DataEngineerAgent(BaseAgent):
             self.current_dataset = df
             self.dataset_profile = DataProfiler.profile(df)
 
+            # === RAG : indexation du dataset dès le chargement ===
+            try:
+                rag = get_rag()
+                rag.index(df, filename=filename)
+            except Exception:
+                pass  # RAG optionnel
+            # =====================================================
+
             quality_report = DataQualityScorer.evaluate(df)
             self.dataset_profile['quality_report'] = quality_report
 
@@ -96,6 +106,40 @@ class DataEngineerAgent(BaseAgent):
             
             if warnings:
                 success_message += "\n\n" + "\n".join(warnings)
+
+            # === LLM : suggestions intelligentes sur la qualité ===
+            if is_available():
+                try:
+                    rag = get_rag()
+                    if rag.is_ready():
+                        rag_query = "qualité données valeurs manquantes doublons outliers colonnes types"
+                        df_summary = "\n\n".join(rag.search(rag_query, k=6))
+                    else:
+                        df_summary = summarize_df_for_llm(df)
+                    llm_suggestions = call_llm(
+                        prompt=(
+                            f"Analyse ce dataset et génère exactement 3 suggestions concrètes "
+                            f"pour améliorer la qualité des données ou préparer la modélisation.\n\n"
+                            f"{df_summary}\n\n"
+                            f"Format de réponse (JSON) :\n"
+                            f'[{{"title": "...", "description": "..."}}, ...]'
+                        ),
+                        system=(
+                            "Tu es un ingénieur données expert. "
+                            "Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown ni explication."
+                        ),
+                        model="claude-haiku-4-5"
+                    )
+                    if llm_suggestions:
+                        import json
+                        try:
+                            suggestions = json.loads(llm_suggestions)
+                            self.dataset_profile['suggestions'] = suggestions
+                        except json.JSONDecodeError:
+                            pass  # garde les suggestions existantes si le JSON est malformé
+                except Exception:
+                    pass  # LLM optionnel, on ne bloque jamais le pipeline
+            # ======================================================
 
             self.message_bus.send_message(Message(
                 sender=self.name,

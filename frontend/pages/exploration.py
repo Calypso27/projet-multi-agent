@@ -1,9 +1,8 @@
 """Page d'exploration"""
 import streamlit as st
-import time
 import base64
-from backend.models.message import Message, MessageType
 from backend.utils.data_quality_scorer import DataQualityScorer
+from frontend.utils.ui_helpers import page_header, section_title
 
 
 def render_exploration():
@@ -12,12 +11,12 @@ def render_exploration():
         st.info("Veuillez d'abord charger un fichier depuis la page d'accueil.")
         if st.button("Retour à l'accueil", type="primary"):
             st.session_state.current_page = "home"
-            st.session_state.current_page_display = "Accueil"
             st.rerun()
         return
 
-    st.markdown("# Exploration")
-    st.markdown("*Analysez la qualité et comprenez vos données*")
+    page_header("🔍", "Exploration des données",
+                "Analysez la qualité et comprenez la structure de votre dataset",
+                badge="Étape 2/5")
 
     if 'workflow' in st.session_state:
         st.session_state.workflow['step_2_data_explored'] = True
@@ -30,21 +29,33 @@ def render_exploration():
     with tab2:
         show_eda_complet_tab()
 
-    st.markdown("---")
-    st.markdown("### Étape suivante")
-
+    st.markdown("<br>", unsafe_allow_html=True)
     quality_score = st.session_state.dataset_info.get('quality_score', 0)
-    if quality_score >= 70:
-        st.success(f"Qualité des données: **{quality_score}/100** - Vous pouvez continuer.")
-        if st.button("Passer à la modélisation", type="primary", use_container_width=True):
+    q_color = "#22c55e" if quality_score >= 70 else "#f59e0b"
+
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,{q_color}10,{q_color}05);'
+        f'border:1px solid {q_color}30;border-left:4px solid {q_color};'
+        f'border-radius:14px;padding:20px 24px;margin-bottom:16px;'
+        f'display:flex;align-items:center;justify-content:space-between;gap:16px;">'
+        f'<div>'
+        f'<div style="font-weight:700;color:#0f172a;font-size:15px;margin-bottom:4px;">'
+        f'Prêt pour la modélisation'
+        f'</div>'
+        f'<div style="font-size:13px;color:#64748b;">'
+        f'Score qualité : <strong style="color:{q_color};">{quality_score}/100</strong>'
+        f'{"— données exploitables" if quality_score >= 70 else "— amélioration recommandée"}'
+        f'</div>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    col_btn, _ = st.columns([2, 5])
+    with col_btn:
+        label = "🧠 Passer à la modélisation" if quality_score >= 70 else "🧠 Continuer malgré tout"
+        if st.button(label, type="primary", use_container_width=True):
             st.session_state.current_page = "predict"
-            st.session_state.current_page_display = "Prédire"
-            st.rerun()
-    else:
-        st.warning(f"Qualité des données: **{quality_score}/100** - Amélioration recommandée.")
-        if st.button("Continuer vers la modélisation", use_container_width=True):
-            st.session_state.current_page = "predict"
-            st.session_state.current_page_display = "Prédire"
             st.rerun()
 
 
@@ -125,13 +136,15 @@ def show_quality_report_tab():
         else:
             color = "#dc3545"
 
-        st.markdown(f"""
-        <div style="background-color: #e0e0e0; border-radius: 10px; height: 40px; overflow: hidden;">
-            <div style="background-color: {color}; width: {score}%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">
-                {score}/100
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="background-color:#e0e0e0;border-radius:10px;height:40px;overflow:hidden;">'
+            f'<div style="background-color:{color};width:{score}%;height:100%;display:flex;'
+            f'align-items:center;justify-content:center;color:white;font-weight:bold;font-size:18px;">'
+            f'{score}/100'
+            f'</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
     with col2:
         st.metric("Note", grade.split(' - ')[0], delta=grade.split(' - ')[1])
@@ -181,11 +194,12 @@ def show_quality_report_tab():
                          "#ffc107" if dim['status'] == 'good' else \
                          "#fd7e14" if dim['status'] == 'fair' else "#dc3545"
 
-            st.markdown(f"""
-            <div style="background-color: #f0f0f0; border-radius: 5px; padding: 10px; margin: 10px 0;">
-                <div style="background-color: {score_color}; width: {dim['score']}%; height: 20px; border-radius: 3px;"></div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="background-color:#f0f0f0;border-radius:5px;padding:10px;margin:10px 0;">'
+                f'<div style="background-color:{score_color};width:{dim["score"]}%;height:20px;border-radius:3px;"></div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
             if key == 'completeness':
                 if dim['columns_with_missing'] > 0:
@@ -336,45 +350,165 @@ def show_eda_complet_tab():
 
         st.markdown("---")
 
-    if st.button("Lancer l'EDA Complet", type="primary"):
-        with st.spinner("Analyse en cours... Cela peut prendre quelques instants pour les gros datasets..."):
+    show_preprocessing_plan()
+
+    eda_already_done = bool(st.session_state.get('eda_report'))
+    btn_label = "🔄 Relancer l'EDA" if eda_already_done else "🔍 Lancer l'EDA Complet"
+    btn_help  = "Regénère le rapport et met à jour le plan de preprocessing" if eda_already_done else None
+
+    if st.button(btn_label, type="primary" if not eda_already_done else "secondary", help=btn_help):
+        dataset = st.session_state.get('shared_dataset')
+        if dataset is None:
+            st.error("Aucun dataset chargé. Veuillez d'abord charger un fichier.")
+            return
+
+        with st.spinner("Analyse en cours... Cela peut prendre quelques instants..."):
+            try:
+                from backend.agents.analyste_agent import AnalysteAgent
+                from backend.utils.preprocessing_advisor import build_preprocessing_plan
+                agent = AnalysteAgent()
+                result, visualizations = agent._eda_complet(dataset)
+                st.session_state.eda_report = result
+                st.session_state.eda_visualizations = visualizations
+                st.session_state.preprocessing_plan = build_preprocessing_plan(dataset)
+                # Réinitialise le dataset nettoyé si on relance l'EDA
+                st.session_state.pop('clean_dataset', None)
+                st.session_state.pop('preprocessing_rapport', None)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur lors de l'analyse EDA : {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
+
+def show_preprocessing_plan():
+    """Affiche le plan de preprocessing expert et permet de préparer le dataset."""
+    plan = st.session_state.get('preprocessing_plan')
+    if not plan:
+        return
+
+    st.markdown("---")
+    st.markdown("## Plan de Preprocessing Expert")
+    st.markdown("*Décisions basées sur l'analyse statistique réelle du dataset*")
+
+    summary = plan.get('summary', {})
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Colonnes analysées", summary.get('total_columns', 0))
+    with col2:
+        st.metric("Colonnes avec NaN", summary.get('cols_with_missing', 0))
+    with col3:
+        st.metric("Colonnes avec outliers", summary.get('cols_with_outliers', 0))
+    with col4:
+        st.metric("À supprimer", summary.get('cols_to_drop', 0))
+
+    # Détail par colonne
+    cols_plan = plan.get('columns', {})
+
+    # Colonnes avec actions
+    treated_cols = {col: info for col, info in cols_plan.items()
+                    if info['action_missing'] != 'none' or info['action_outliers'] == 'cap' or info['drop']}
+
+    if treated_cols:
+        with st.expander(f"Détail des décisions ({len(treated_cols)} colonnes)", expanded=True):
+            for col, info in treated_cols.items():
+                status_color = "#ef4444" if info['drop'] else "#f59e0b" if info['action_missing'] != 'none' else "#22c55e"
+                part_drop = (
+                    '<br><span style="font-size:12px;color:#ef4444;">🗑 ' + info["drop_reason"] + '</span>'
+                    if info["drop"] else ""
+                )
+                part_nan = (
+                    '<br><span style="font-size:12px;color:#f59e0b;">🔧 NaN: ' + info["reason_missing"] + ' → ' + info["action_missing"] + '</span>'
+                    if info["action_missing"] != "none" and not info["drop"] else ""
+                )
+                part_outliers = (
+                    '<br><span style="font-size:12px;color:#8b5cf6;">📊 Outliers: ' + info["reason_outliers"] + '</span>'
+                    if info["action_outliers"] == "cap" else ""
+                )
+                st.markdown(
+                    f'<div style="border-left:3px solid {status_color};padding:8px 14px;'
+                    f'margin-bottom:6px;background:#f8fafc;border-radius:0 6px 6px 0;">'
+                    f'<strong style="color:#0f172a;">{col}</strong> '
+                    f'<span style="font-size:11px;color:#64748b;">({info["dtype"]})</span>'
+                    f'{part_drop}{part_nan}{part_outliers}'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+    # Corrélations détectées
+    corr_pairs = plan.get('global', {}).get('correlated_pairs', [])
+    if corr_pairs:
+        with st.expander(f"Multicolinéarité détectée ({len(corr_pairs)} paires)"):
+            for col_drop, col_keep, corr_val in corr_pairs:
+                st.markdown(f"- **{col_drop}** ↔ **{col_keep}** : r={corr_val:.3f} → `{col_drop}` sera supprimée")
+
+    # ── Statut actuel ────────────────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    plan_applied = 'clean_dataset' in st.session_state
+
+    if plan_applied:
+        rapport_prec = st.session_state.get('preprocessing_rapport', {})
+        df_clean = st.session_state.clean_dataset
+        dataset  = st.session_state.get('shared_dataset')
+        st.markdown(
+            '<div style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.4);'
+            'border-left:4px solid #22c55e;border-radius:8px;padding:12px 16px;margin-bottom:12px;">'
+            '<strong style="color:#166534;">✅ Plan appliqué — dataset prêt pour la modélisation</strong>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
+        # Tableau avant / après
+        import pandas as _pd
+        rows = []
+        for col, action in rapport_prec.get('actions', {}).items():
+            rows.append({'Colonne': col, 'Action appliquée': action})
+        if rows:
+            with st.expander("📋 Détail des modifications appliquées", expanded=False):
+                st.dataframe(_pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            delta_rows = rapport_prec.get('rows_after', 0) - rapport_prec.get('rows_before', 0)
+            st.metric("Lignes", f"{rapport_prec.get('rows_after', 0):,}",
+                      delta=f"{delta_rows:+,}" if delta_rows else None)
+        with c2:
+            n_before = dataset.shape[1] if dataset is not None else '?'
+            n_after  = df_clean.shape[1]
+            st.metric("Colonnes", n_after,
+                      delta=f"{n_after - n_before:+}" if dataset is not None else None)
+        with c3:
+            nan_after = int(df_clean.isnull().sum().sum())
+            st.metric("NaN restants", nan_after,
+                      delta="0 NaN" if nan_after == 0 else f"{nan_after} restants")
+
+        if st.button("↩️ Réinitialiser le preprocessing", type="secondary"):
+            st.session_state.pop('clean_dataset', None)
+            st.session_state.pop('preprocessing_rapport', None)
+            st.rerun()
+    else:
+        st.markdown(
+            '<div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.4);'
+            'border-left:4px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:12px;">'
+            '<strong style="color:#92400e;">⚠️ Plan non encore appliqué</strong>'
+            '<br><span style="font-size:13px;color:#78350f;">Le dataset brut sera utilisé pour la modélisation. '
+            'Cliquez ci-dessous pour appliquer les recommandations.</span>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        if st.button("🧹 Appliquer le plan et préparer le dataset", type="primary"):
             dataset = st.session_state.get('shared_dataset')
-
             if dataset is None:
-                st.error("Aucun dataset charge. Veuillez d'abord charger un fichier.")
+                st.error("Dataset non disponible.")
                 return
-
-            st.session_state.bus.send_message(Message(
-                sender="Frontend",
-                receiver="ChefProjet",
-                message_type=MessageType.USER_MESSAGE,
-                content={'message': 'eda_complet', 'dataset': dataset}
-            ))
-
-            response = wait_for_response(max_wait=60)
-
-            if response:
-                if response.message_type == MessageType.AGENT_RESPONSE:
-                    result = response.content.get('message', '')
-                    visualizations = response.content.get('visualizations', {})
-
-                    # Stocker le rapport et les visualisations
-                    st.session_state.eda_report = result
-                    st.session_state.eda_visualizations = visualizations
-
-                    st.success(" Analyse EDA complete terminee!")
+            with st.spinner("Application du plan de preprocessing..."):
+                try:
+                    from backend.utils.data_preprocessor import DataPreprocessor
+                    df_clean, rapport = DataPreprocessor.apply_plan(dataset, plan)
+                    st.session_state.clean_dataset = df_clean
+                    st.session_state.preprocessing_rapport = rapport
                     st.rerun()
-
-                elif response.message_type == MessageType.ERROR:
-                    st.error(response.content.get('error', 'Erreur'))
-            else:
-                st.error("Delai d'attente depasse. Le dataset est peut-etre trop volumineux.")
-
-
-def wait_for_response(max_wait=15):
-    for _ in range(max_wait * 2):
-        time.sleep(0.5)
-        response = st.session_state.bus.receive_message("Frontend")
-        if response:
-            return response
-    return None
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+                    import traceback
+                    st.code(traceback.format_exc())

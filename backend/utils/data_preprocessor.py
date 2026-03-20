@@ -320,3 +320,77 @@ class DataPreprocessor:
             result['data_test'] = None
 
         return result
+
+    @staticmethod
+    def apply_plan(df: pd.DataFrame, plan: Dict[str, Any]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Applique un plan de preprocessing expert généré par preprocessing_advisor.
+        Stratégie différenciée par colonne (médiane/moyenne/mode selon distribution).
+        """
+        df_clean = df.copy()
+        rapport: Dict[str, Any] = {
+            'rows_before': len(df),
+            'rows_after': 0,
+            'actions': {},
+            'dropped_columns': [],
+            'outliers_capped': [],
+        }
+
+        cols_plan = plan.get('columns', {})
+
+        # 1. Supprimer les colonnes marquées
+        to_drop = [col for col, info in cols_plan.items()
+                   if info.get('drop') and col in df_clean.columns]
+        if to_drop:
+            df_clean = df_clean.drop(columns=to_drop)
+            rapport['dropped_columns'] = to_drop
+            for col in to_drop:
+                rapport['actions'][col] = f"Supprimée — {cols_plan[col].get('drop_reason', '')}"
+
+        # 2. Imputation des valeurs manquantes
+        for col, info in cols_plan.items():
+            if col not in df_clean.columns:
+                continue
+            action = info.get('action_missing', 'none')
+            if action == 'none' or df_clean[col].isnull().sum() == 0:
+                continue
+            missing_n = int(df_clean[col].isnull().sum())
+            if action == 'median':
+                val = df_clean[col].median()
+                df_clean[col] = df_clean[col].fillna(val)
+                rapport['actions'][col] = f"Médiane={val:.4g} ({missing_n} valeurs) — {info.get('reason_missing', '')}"
+            elif action == 'mean':
+                val = df_clean[col].mean()
+                df_clean[col] = df_clean[col].fillna(val)
+                rapport['actions'][col] = f"Moyenne={val:.4g} ({missing_n} valeurs) — {info.get('reason_missing', '')}"
+            elif action == 'mode':
+                mode_vals = df_clean[col].mode()
+                if len(mode_vals) > 0:
+                    df_clean[col] = df_clean[col].fillna(mode_vals[0])
+                    rapport['actions'][col] = f"Mode='{mode_vals[0]}' ({missing_n} valeurs) — {info.get('reason_missing', '')}"
+
+        # 3. Écrêtage des outliers (cap)
+        for col, info in cols_plan.items():
+            if col not in df_clean.columns:
+                continue
+            if info.get('action_outliers') == 'cap':
+                Q1 = float(df_clean[col].quantile(0.25))
+                Q3 = float(df_clean[col].quantile(0.75))
+                IQR = Q3 - Q1
+                if IQR > 0:
+                    lower = Q1 - 1.5 * IQR
+                    upper = Q3 + 1.5 * IQR
+                    n_capped = int(((df_clean[col] < lower) | (df_clean[col] > upper)).sum())
+                    df_clean[col] = df_clean[col].clip(lower=lower, upper=upper)
+                    rapport['outliers_capped'].append(col)
+                    existing = rapport['actions'].get(col, '')
+                    rapport['actions'][col] = (existing + f" | Outliers écrêtés : {n_capped} valeurs [{lower:.4g}, {upper:.4g}]").lstrip(' | ')
+
+        # 4. Supprimer les doublons
+        dups = int(df_clean.duplicated().sum())
+        if dups > 0:
+            df_clean = df_clean.drop_duplicates()
+            rapport['duplicates_removed'] = dups
+
+        rapport['rows_after'] = len(df_clean)
+        return df_clean, rapport

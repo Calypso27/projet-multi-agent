@@ -10,3 +10,6 @@ pyarrow>=14.0.2
 scipy>=1.10.0
 xlrd
 joblib>=1.3.0
+anthropic>=0.40.0
+python-dotenv>=1.0.0
+sentence-transformers>=2.0.0
