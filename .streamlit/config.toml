@@ -9,7 +9,7 @@ fileWatcherType = "none"
 
 # Trust the X-Forwarded-* headers set by nginx
 enableCORS = false
-enableXsrfProtection = true
+enableXsrfProtection = false
 
 # Increase upload limit to match nginx client_max_body_size
 maxUploadSize = 100
